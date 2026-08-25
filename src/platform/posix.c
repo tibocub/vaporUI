@@ -4,14 +4,23 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include "../../include/vaporui.h"
 
 static struct termios original_termios;
+static volatile sig_atomic_t resize_pending = 0;
+
+static void handle_sigwinch(int signal)
+{
+    (void)signal;
+    resize_pending = 1;
+}
 
 int vui_platform_init(void)
 {
     struct termios raw;
+    struct sigaction action;
 
     if (tcgetattr(STDIN_FILENO, &original_termios) == -1) {
         return -1;
@@ -19,14 +28,12 @@ int vui_platform_init(void)
 
     raw = original_termios;
 
-    // Don't wait for Enter, get input immediatly.
-    raw.c_lflag &= ~(ICANON | ECHO);
+    // ICANON	-> don't wait for the user to press 'enter'
+    // ECHO		-> don't print in term the pressed keys
+    // ISIG		-> don't interpret keys, only pass them (for
+    //           example, 'ctrl-c' sends 0x03, not SIGINT)
+    raw.c_lflag &= ~(ICANON | ECHO | ISIG);
 
-    // Receives Ctrl-C as the byte 0x03 instead
-    // of having the terminal generate SIGINT.
-    raw.c_lflag &= ~ISIG;
-
-    // Read one byte at a time.
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
 
@@ -34,7 +41,16 @@ int vui_platform_init(void)
         return -1;
     }
 
-    return 0;
+    action.sa_handler = handle_sigwinch;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+
+    if (sigaction(SIGWINCH, &action, NULL) == -1) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
+        return -1;
+    }
+
+    return 0; 
 }
 
 void vui_platform_shutdown(void)
@@ -79,11 +95,40 @@ VuiEvent vui_platform_poll_event(void)
         .type = VUI_EVENT_NONE
     };
 
-    do {
-        result = read(STDIN_FILENO, &c, 1);
-    } while (result == -1 && errno == EINTR);
+    if (resize_pending) {
+        VuiSize size;
 
-    if (result <= 0) {
+        resize_pending = 0;
+
+        if (vui_platform_get_size(&size) == 0) {
+            event.type = VUI_EVENT_RESIZE;
+            event.size = size;
+        }
+
+        return event;
+    }
+
+    result = read(STDIN_FILENO, &c, 1);
+
+    // Handles resize when read is blocked
+    if (result == -1) {
+        if (errno == EINTR && resize_pending) {
+            VuiSize size;
+
+            resize_pending = 0;
+
+            if (vui_platform_get_size(&size) == 0) {
+                event.type = VUI_EVENT_RESIZE;
+                event.size = size;
+            }
+
+            return event;
+        }
+
+        return event;
+    }
+
+    if (result == 0) {
         return event;
     }
 
