@@ -6,45 +6,72 @@ struct VuiCtx {
     VuiSize size;
 };
 
+int vui_platform_init(void);
+void vui_platform_shutdown(void);
+
 int vui_platform_get_size(VuiSize *size);
 void vui_platform_clear(void);
+VuiEvent vui_platform_poll_event(void);
 
-VuiCtx*vui_init(void)
+VuiCtx *vui_init(void)
 {
-    VuiCtx *ctx;
-    ctx = malloc(sizeof(*ctx));
+    VuiCtx *ui;
 
-    if (ctx == NULL) {
+    if (vui_platform_init() != 0) {
         return NULL;
     }
 
-    if (vui_platform_get_size(&ctx->size) != 0) {
-        free(ctx);
+    ui = malloc(sizeof(*ui));
+
+    if (ui == NULL) {
+        vui_platform_shutdown();
         return NULL;
     }
 
-    return ctx;
-}
-
-void vui_shutdown(VuiCtx *ctx)
-{
-   free(ctx);
-}
-
-int vui_get_size(VuiCtx *ctx, VuiSize *size)
-{
-    // Size not cached yet, simply query the platform
-    if (ctx == NULL || size == NULL) {
-        return -1;
+    if (vui_platform_get_size(&ui->size) != 0) {
+        free(ui);
+        vui_platform_shutdown();
+        return NULL;
     }
-
-    return vui_platform_get_size(size);
-}
-
-void vui_clear(VuiCtx *ctx)
-{
-    // ctx not used yet but will be soon useful
-    (void)ctx;
 
     vui_platform_clear();
+
+    return ui;
+}
+
+void vui_shutdown(VuiCtx *ui)
+{
+    if (ui == NULL) {
+        return;
+    }
+
+    vui_platform_shutdown();
+    free(ui);
+}
+
+unsigned int vui_width(VuiCtx *ui)
+{
+    return ui->size.width;
+}
+
+unsigned int vui_height(VuiCtx *ui)
+{
+    return ui->size.height;
+}
+
+void vui_clear(VuiCtx *ui)
+{
+    (void)ui;
+    vui_platform_clear();
+}
+
+VuiEvent vui_poll_event(VuiCtx *ui)
+{
+    VuiEvent event = vui_platform_poll_event();
+
+    if (event.type == VUI_EVENT_RESIZE) {
+        ui->size = event.size;
+    }
+
+    return event;
 }

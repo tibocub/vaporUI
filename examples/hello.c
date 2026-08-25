@@ -2,31 +2,47 @@
 
 #include "../include/vaporui.h"
 
+void printres(VuiCtx *ctx)
+{
+    printf(
+        "Terminal resolution: %ux%u\n",
+        vui_width(ctx),
+        vui_height(ctx)
+    );
+}
+
 int main(void)
 {
     VuiCtx *ui;
-    VuiSize size;
 
     ui = vui_init();
+	printres(ui);
 
     if (ui == NULL) {
         fprintf(stderr, "Failed to initialize VaporUI\n");
         return 1;
     }
 
-    vui_clear(ui);
+    for (;;) {
+        VuiEvent event = vui_poll_event(ui);
 
-    if (vui_get_size(ui, &size) != 0) {
-        fprintf(stderr, "Failed to get terminal size\n");
-        vui_shutdown(ui);
-        return 1;
+        if (event.type == VUI_EVENT_RESIZE) {
+            printres(ui);
+            fflush(stdout);
+        }
+
+        if (event.type == VUI_EVENT_KEY) {
+            if (event.key.key == VUI_KEY_CTRL_C) {
+                break;
+            }
+
+            printf(
+                "key: %u\n",
+                event.key.character
+            );
+            fflush(stdout);
+        }
     }
-
-    printf(
-        "Terminal resolution: %u columns x %u rows\n",
-        size.width,
-        size.height
-    );
 
     vui_shutdown(ui);
 
