@@ -1,7 +1,10 @@
+#include <stdint.h>
+
 #ifndef VAPORUI_H
 #define VAPORUI_H
 
 typedef struct VuiCtx VuiCtx;
+typedef uint32_t VuiCodepoint;
 
 typedef struct {
     unsigned int width;
@@ -11,8 +14,22 @@ typedef struct {
 typedef enum {
     VUI_EVENT_NONE,
     VUI_EVENT_KEY,
+    VUI_EVENT_TEXT,
     VUI_EVENT_RESIZE
 } VuiEventType;
+
+typedef enum {
+    VUI_MOD_NONE  = 0,
+    VUI_MOD_SHIFT = 1 << 0,
+    VUI_MOD_ALT   = 1 << 1,
+    VUI_MOD_CTRL  = 1 << 2,
+    VUI_MOD_META  = 1 << 3
+} VuiModifiers;
+
+typedef struct {
+    VuiKey key;
+    VuiModifiers modifiers;
+} VuiKeyEvent;
 
 typedef enum {
     VUI_KEY_NONE = 0,
@@ -28,8 +45,6 @@ typedef enum {
     VUI_KEY_DOWN,
     VUI_KEY_LEFT,
     VUI_KEY_RIGHT,
-
-    VUI_KEY_CHAR
 } VuiKey;
 
 typedef struct {
@@ -38,8 +53,11 @@ typedef struct {
     union {
         struct {
             VuiKey key;
-            unsigned char character;
         } key;
+
+        struct {
+            VuiCodepoint codepoint;
+        } text;
 
         VuiSize size;
     };
