@@ -37,12 +37,6 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
         }
     }
 
-    // NOTE: a real lone Escape keypress also starts here and never
-    // gets a '[' to complete the sequence, so it'll sit in
-    // in_escape until the *next* byte arrives -- which then gets
-    // wrongly fed to the VT decoder instead of handled on its own.
-    // Telling the two apart needs a short read timeout at the
-    // platform layer once we're mid-escape; not done yet.
     if (byte == 0x1B) {
         decoder->in_escape = 1;
         vui_vt_reset(&decoder->vt);
@@ -68,4 +62,19 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
     }
 
     return event;
+}
+
+int vui_input_pending_escape(const VuiInputDecoder *decoder)
+{
+    return decoder->in_escape;
+}
+
+VuiEvent vui_input_timeout(VuiInputDecoder *decoder)
+{
+    if (!decoder->in_escape) {
+        return (VuiEvent){ .type = VUI_EVENT_NONE };
+    }
+
+    decoder->in_escape = 0;
+    return key_event(VUI_KEY_ESCAPE);
 }

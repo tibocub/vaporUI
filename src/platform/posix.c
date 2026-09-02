@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -8,6 +9,15 @@
 
 #include "../../include/vaporui.h"
 #include "../input.h"
+
+// How long to wait for the rest of an escape sequence once a lone
+// ESC byte has come in, before giving up and reporting a standalone
+// Escape key. Same problem ncurses (ESCDELAY), vim (ttimeoutlen) and
+// tmux (escape-time) all solve the same way: escape sequences from a
+// real terminal arrive as a burst, not typed by hand, so a short
+// bounded wait tells a real Escape keypress apart from the start of
+// e.g. an arrow key without perceptibly delaying either one.
+#define VUI_ESCAPE_TIMEOUT_MS 25
 
 static struct termios original_termios;
 static volatile sig_atomic_t resize_pending = 0;
@@ -94,6 +104,8 @@ VuiEvent vui_platform_poll_event(void)
 {
     unsigned char c;
     ssize_t result;
+    struct pollfd pfd;
+    int timeout_ms;
 
     VuiEvent event = {
         .type = VUI_EVENT_NONE
@@ -112,10 +124,14 @@ VuiEvent vui_platform_poll_event(void)
         return event;
     }
 
-    result = read(STDIN_FILENO, &c, 1);
+    pfd.fd = STDIN_FILENO;
+    pfd.events = POLLIN;
+    timeout_ms = vui_input_pending_escape(&input_decoder)
+        ? VUI_ESCAPE_TIMEOUT_MS
+        : -1;
 
-    // Handles resize when read is blocked
-    if (result == -1) {
+    // Handles resize when poll is blocked
+    if (poll(&pfd, 1, timeout_ms) == -1) {
         if (errno == EINTR && resize_pending) {
             VuiSize size;
 
@@ -125,14 +141,20 @@ VuiEvent vui_platform_poll_event(void)
                 event.type = VUI_EVENT_RESIZE;
                 event.size = size;
             }
-
-            return event;
         }
 
         return event;
     }
 
-    if (result == 0) {
+    if (!(pfd.revents & POLLIN)) {
+        // Timed out: no more bytes came, so a pending escape
+        // sequence was actually just a standalone ESC keypress.
+        return vui_input_timeout(&input_decoder);
+    }
+
+    result = read(STDIN_FILENO, &c, 1);
+
+    if (result <= 0) {
         return event;
     }
 

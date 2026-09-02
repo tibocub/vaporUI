@@ -1,6 +1,8 @@
+#include <stdint.h>
 #include <stdio.h>
 
 #include "../include/vaporui.h"
+#include "../src/utf8.h"
 
 static const char *key_name(VuiKey key)
 {
@@ -62,10 +64,14 @@ int main(void)
             fflush(stdout);
             break;
 
-        case VUI_EVENT_TEXT:
-            printf("text: U+%04X\n", event.text.codepoint);
+        case VUI_EVENT_TEXT: {
+            uint8_t utf8[5] = {0};
+            int len = vui_utf8_encode(event.text.codepoint, utf8);
+
+            printf("text: %.*s (U+%04X)\n", len, utf8, event.text.codepoint);
             fflush(stdout);
             break;
+        }
 
         default:
             break;
