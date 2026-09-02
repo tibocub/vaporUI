@@ -26,11 +26,6 @@ typedef enum {
     VUI_MOD_META  = 1 << 3
 } VuiModifiers;
 
-typedef struct {
-    VuiKey key;
-    VuiModifiers modifiers;
-} VuiKeyEvent;
-
 typedef enum {
     VUI_KEY_NONE = 0,
 
@@ -40,20 +35,29 @@ typedef enum {
     VUI_KEY_BACKSPACE,
     VUI_KEY_TAB,
     VUI_KEY_ESCAPE,
+    VUI_KEY_DELETE,
 
     VUI_KEY_UP,
     VUI_KEY_DOWN,
     VUI_KEY_LEFT,
     VUI_KEY_RIGHT,
+
+    VUI_KEY_HOME,
+    VUI_KEY_END,
+    VUI_KEY_PAGE_UP,
+    VUI_KEY_PAGE_DOWN,
 } VuiKey;
+
+typedef struct {
+    VuiKey key;
+    VuiModifiers modifiers;
+} VuiKeyEvent;
 
 typedef struct {
     VuiEventType type;
 
     union {
-        struct {
-            VuiKey key;
-        } key;
+        VuiKeyEvent key;
 
         struct {
             VuiCodepoint codepoint;

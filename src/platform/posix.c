@@ -7,9 +7,11 @@
 #include <signal.h>
 
 #include "../../include/vaporui.h"
+#include "../input.h"
 
 static struct termios original_termios;
 static volatile sig_atomic_t resize_pending = 0;
+static VuiInputDecoder input_decoder;
 
 static void handle_sigwinch(int signal)
 {
@@ -49,6 +51,8 @@ int vui_platform_init(void)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
         return -1;
     }
+
+    vui_input_reset(&input_decoder);
 
     return 0; 
 }
@@ -132,40 +136,5 @@ VuiEvent vui_platform_poll_event(void)
         return event;
     }
 
-    event.type = VUI_EVENT_KEY;
-
-    switch (c) {
-    case 3:
-        event.key.key = VUI_KEY_CTRL_C;
-        event.key.character = c;
-        break;
-
-    case '\n':
-    case '\r':
-        event.key.key = VUI_KEY_ENTER;
-        event.key.character = c;
-        break;
-
-    case '\t':
-        event.key.key = VUI_KEY_TAB;
-        event.key.character = c;
-        break;
-
-    case 27:
-        event.key.key = VUI_KEY_ESCAPE;
-        event.key.character = c;
-        break;
-
-    case 127:
-        event.key.key = VUI_KEY_BACKSPACE;
-        event.key.character = c;
-        break;
-
-    default:
-        event.key.key = VUI_KEY_CHAR;
-        event.key.character = c;
-        break;
-    }
-
-    return event;
+    return vui_input_feed(&input_decoder, c);
 }

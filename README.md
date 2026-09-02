@@ -22,8 +22,8 @@ VaporUI API:
 - [WIP] shutdown
 - [WIP] keyboard events
 - [x] resize events
-- [WIP] UTF-8 parser
-- [ ] VT parser
+- [x] UTF-8 parser
+- [x] VT parser
 - [ ] styling (bold/underline/colors/background etc.)
 - [ ] theming
 

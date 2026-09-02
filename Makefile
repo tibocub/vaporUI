@@ -4,7 +4,7 @@ CFLAGS := -Wall
 TARGET ?= POSIX
 POSIX := src/platform/posix.c
 
-SRCS := $(shell find src -maxdepth 1 -type f -name "*.c" -name "*.h")
+SRCS := $(shell find src -maxdepth 1 -type f -name "*.c")
 INCLUDES := includes/%.h
 
 .PHONY: all clean
