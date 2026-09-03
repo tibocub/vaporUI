@@ -74,7 +74,62 @@ unsigned int vui_width(VuiCtx *ui);
 unsigned int vui_height(VuiCtx *ui);
 
 void vui_clear(VuiCtx *ui);
+void vui_flush(VuiCtx *ui);
 
 VuiEvent vui_poll_event(VuiCtx *ui);
+
+// -- Screen buffer --
+//
+// Double-buffered cell grid: draw into it with scr_set/scr_puts,
+// nothing reaches the terminal until scr_flush(), which diffs
+// against what's actually on screen and writes only what changed.
+// vui_screen() returns the one owned by ui -- sized and resized
+// automatically with the terminal, no separate lifecycle to manage.
+
+typedef enum {
+    VUI_COLOR_DEFAULT = 0,
+    VUI_COLOR_BLACK,
+    VUI_COLOR_RED,
+    VUI_COLOR_GREEN,
+    VUI_COLOR_YELLOW,
+    VUI_COLOR_BLUE,
+    VUI_COLOR_MAGENTA,
+    VUI_COLOR_CYAN,
+    VUI_COLOR_WHITE,
+} VuiColor;
+
+typedef enum {
+    VUI_ATTR_NONE      = 0,
+    VUI_ATTR_BOLD      = 1 << 0,
+    VUI_ATTR_UNDERLINE = 1 << 1,
+    VUI_ATTR_REVERSE   = 1 << 2,
+} VuiAttr;
+
+typedef struct {
+    VuiColor fg;
+    VuiColor bg;
+    VuiAttr attr;
+} VuiStyle;
+
+typedef struct {
+    VuiCodepoint codepoint;
+    VuiStyle style;
+} VuiCell;
+
+typedef struct VuiScreen VuiScreen;
+
+VuiScreen *vui_screen(VuiCtx *ui);
+
+VuiScreen *scr_create(unsigned int width, unsigned int height);
+void scr_destroy(VuiScreen *scr);
+void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height);
+
+unsigned int scr_width(VuiScreen *scr);
+unsigned int scr_height(VuiScreen *scr);
+
+void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style);
+void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *utf8, VuiStyle style);
+void scr_clear(VuiScreen *scr, VuiStyle style);
+void scr_flush(VuiScreen *scr);
 
 #endif

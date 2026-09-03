@@ -4,6 +4,7 @@
 
 struct VuiCtx {
     VuiSize size;
+    VuiScreen *screen;
 };
 
 int vui_platform_init(void);
@@ -34,6 +35,14 @@ VuiCtx *vui_init(void)
         return NULL;
     }
 
+    ui->screen = scr_create(ui->size.width, ui->size.height);
+
+    if (ui->screen == NULL) {
+        free(ui);
+        vui_platform_shutdown();
+        return NULL;
+    }
+
     vui_platform_clear();
 
     return ui;
@@ -45,6 +54,7 @@ void vui_shutdown(VuiCtx *ui)
         return;
     }
 
+    scr_destroy(ui->screen);
     vui_platform_shutdown();
     free(ui);
 }
@@ -59,10 +69,21 @@ unsigned int vui_height(VuiCtx *ui)
     return ui->size.height;
 }
 
+// Clears the back buffer -- nothing reaches the terminal until the
+// next vui_flush().
 void vui_clear(VuiCtx *ui)
 {
-    (void)ui;
-    vui_platform_clear();
+    scr_clear(ui->screen, (VuiStyle){0});
+}
+
+void vui_flush(VuiCtx *ui)
+{
+    scr_flush(ui->screen);
+}
+
+VuiScreen *vui_screen(VuiCtx *ui)
+{
+    return ui->screen;
 }
 
 VuiEvent vui_poll_event(VuiCtx *ui)
@@ -71,6 +92,7 @@ VuiEvent vui_poll_event(VuiCtx *ui)
 
     if (event.type == VUI_EVENT_RESIZE) {
         ui->size = event.size;
+        scr_resize(ui->screen, event.size.width, event.size.height);
     }
 
     return event;

@@ -24,8 +24,15 @@ VaporUI API:
 - [x] resize events
 - [x] UTF-8 parser
 - [x] VT parser
-- [ ] styling (bold/underline/colors/background etc.)
+- [WIP] styling (bold/underline/colors/background etc.)
 - [ ] theming
+
+Rendering:
+- [x] cell buffer (double-buffered, diffed against what's on screen)
+- [x] basic styling (8 ANSI colors, bold/underline/reverse)
+- [ ] wide/double-width character support
+- [ ] 256-color / truecolor
+- [ ] element tree + flexbox-style layout (next up)
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution

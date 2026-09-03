@@ -25,13 +25,23 @@ static const char *key_name(VuiKey key)
     }
 }
 
-static void printres(VuiCtx *ctx)
+static void draw(VuiCtx *ui, const char *status)
 {
-    printf(
-        "Terminal resolution: %ux%u\n",
-        vui_width(ctx),
-        vui_height(ctx)
-    );
+    VuiScreen *scr = vui_screen(ui);
+    char line[64];
+
+    vui_clear(ui);
+
+    snprintf(line, sizeof(line), "Terminal resolution: %ux%u", vui_width(ui), vui_height(ui));
+    scr_puts(scr, 0, 0, line, (VuiStyle){0});
+
+    if (status != NULL) {
+        scr_puts(scr, 0, 1, status, (VuiStyle){ .attr = VUI_ATTR_BOLD });
+    }
+
+    scr_puts(scr, 0, 3, "Ctrl-C to quit", (VuiStyle){0});
+
+    vui_flush(ui);
 }
 
 int main(void)
@@ -43,15 +53,14 @@ int main(void)
         return 1;
     }
 
-    printres(ui);
+    draw(ui, NULL);
 
     for (;;) {
         VuiEvent event = vui_poll_event(ui);
 
         switch (event.type) {
         case VUI_EVENT_RESIZE:
-            printres(ui);
-            fflush(stdout);
+            draw(ui, NULL);
             break;
 
         case VUI_EVENT_KEY:
@@ -60,16 +69,20 @@ int main(void)
                 return 0;
             }
 
-            printf("key: %s\n", key_name(event.key.key));
-            fflush(stdout);
+            {
+                char status[64];
+                snprintf(status, sizeof(status), "key: %s", key_name(event.key.key));
+                draw(ui, status);
+            }
             break;
 
         case VUI_EVENT_TEXT: {
             uint8_t utf8[5] = {0};
             int len = vui_utf8_encode(event.text.codepoint, utf8);
+            char status[64];
 
-            printf("text: %.*s (U+%04X)\n", len, utf8, event.text.codepoint);
-            fflush(stdout);
+            snprintf(status, sizeof(status), "text: %.*s (U+%04X)", len, utf8, event.text.codepoint);
+            draw(ui, status);
             break;
         }
 
