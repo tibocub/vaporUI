@@ -4,6 +4,11 @@
 #include "../include/vaporui.h"
 #include "../src/utf8.h"
 
+typedef struct {
+    VuiCtx *ui;
+    char status[64];
+} App;
+
 static const char *key_name(VuiKey key)
 {
     switch (key) {
@@ -25,64 +30,93 @@ static const char *key_name(VuiKey key)
     }
 }
 
-static void draw(VuiCtx *ui, const char *status)
+static void draw_sidebar(VuiNode *node, VuiScreen *scr, void *userdata)
 {
-    VuiScreen *scr = vui_screen(ui);
+    (void)userdata;
+    VuiRect r = node->rect;
+
+    scr_puts(scr, r.x, r.y, "vaporUI hello", (VuiStyle){ .attr = VUI_ATTR_BOLD });
+    scr_puts(scr, r.x, r.y + 2, "Ctrl-C to quit", (VuiStyle){0});
+}
+
+static void draw_main(VuiNode *node, VuiScreen *scr, void *userdata)
+{
+    App *app = userdata;
+    VuiRect r = node->rect;
     char line[64];
 
-    vui_clear(ui);
+    snprintf(line, sizeof(line), "Terminal resolution: %ux%u", vui_width(app->ui), vui_height(app->ui));
+    scr_puts(scr, r.x, r.y, line, (VuiStyle){0});
 
-    snprintf(line, sizeof(line), "Terminal resolution: %ux%u", vui_width(ui), vui_height(ui));
-    scr_puts(scr, 0, 0, line, (VuiStyle){0});
-
-    if (status != NULL) {
-        scr_puts(scr, 0, 1, status, (VuiStyle){ .attr = VUI_ATTR_BOLD });
+    if (app->status[0] != '\0') {
+        scr_puts(scr, r.x, r.y + 1, app->status, (VuiStyle){ .attr = VUI_ATTR_BOLD });
     }
+}
 
-    scr_puts(scr, 0, 3, "Ctrl-C to quit", (VuiStyle){0});
+static void layout_and_draw(App *app, VuiNode *root)
+{
+    VuiRect full = { .x = 0, .y = 0, .width = vui_width(app->ui), .height = vui_height(app->ui) };
 
-    vui_flush(ui);
+    node_layout(root, full);
+
+    vui_clear(app->ui);
+    node_draw(root, vui_screen(app->ui));
+    vui_flush(app->ui);
 }
 
 int main(void)
 {
-    VuiCtx *ui = vui_init();
+    App app = {0};
 
-    if (ui == NULL) {
+    app.ui = vui_init();
+
+    if (app.ui == NULL) {
         fprintf(stderr, "Failed to initialize VaporUI\n");
         return 1;
     }
 
-    draw(ui, NULL);
+    VuiNode *root = node_create();
+    root->direction = VUI_DIR_ROW;
+    root->gap = 2;
+
+    VuiNode *sidebar = node_create();
+    sidebar->basis = 20; // fixed width, doesn't grow or shrink
+    sidebar->draw = draw_sidebar;
+    node_add(root, sidebar);
+
+    VuiNode *main_pane = node_create();
+    main_pane->grow = 1; // takes whatever's left
+    main_pane->draw = draw_main;
+    main_pane->userdata = &app;
+    node_add(root, main_pane);
+
+    layout_and_draw(&app, root);
 
     for (;;) {
-        VuiEvent event = vui_poll_event(ui);
+        VuiEvent event = vui_poll_event(app.ui);
 
         switch (event.type) {
         case VUI_EVENT_RESIZE:
-            draw(ui, NULL);
+            layout_and_draw(&app, root);
             break;
 
         case VUI_EVENT_KEY:
             if (event.key.key == VUI_KEY_CTRL_C) {
-                vui_shutdown(ui);
+                node_destroy(root);
+                vui_shutdown(app.ui);
                 return 0;
             }
 
-            {
-                char status[64];
-                snprintf(status, sizeof(status), "key: %s", key_name(event.key.key));
-                draw(ui, status);
-            }
+            snprintf(app.status, sizeof(app.status), "key: %s", key_name(event.key.key));
+            layout_and_draw(&app, root);
             break;
 
         case VUI_EVENT_TEXT: {
             uint8_t utf8[5] = {0};
             int len = vui_utf8_encode(event.text.codepoint, utf8);
-            char status[64];
 
-            snprintf(status, sizeof(status), "text: %.*s (U+%04X)", len, utf8, event.text.codepoint);
-            draw(ui, status);
+            snprintf(app.status, sizeof(app.status), "text: %.*s (U+%04X)", len, utf8, event.text.codepoint);
+            layout_and_draw(&app, root);
             break;
         }
 

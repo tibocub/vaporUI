@@ -32,7 +32,16 @@ Rendering:
 - [x] basic styling (8 ANSI colors, bold/underline/reverse)
 - [ ] wide/double-width character support
 - [ ] 256-color / truecolor
-- [ ] element tree + flexbox-style layout (next up)
+
+Layout:
+- [x] element tree (node_create/add/remove/destroy)
+- [x] flexbox subset: direction, basis/grow/shrink, gap, uniform padding
+- [x] wired to the renderer (node_draw walks the tree, draw callbacks get their node's computed rect)
+- [ ] cross-axis alignment (currently stretch-only, no start/center/end)
+- [ ] justify-content variants (currently packed-from-start + gap only)
+- [ ] content-based sizing (basis is always explicit -- no text measurement yet)
+- [ ] per-side padding (currently uniform only)
+- [ ] draw callbacks aren't clipped to their node's rect yet
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution

@@ -132,4 +132,66 @@ void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *utf8, 
 void scr_clear(VuiScreen *scr, VuiStyle style);
 void scr_flush(VuiScreen *scr);
 
+// -- Element tree / layout --
+//
+// A flexbox subset: direction + basis/grow/shrink/gap along the main
+// axis, uniform padding, and cross-axis stretch (the only cross-axis
+// behavior for now -- no align-items variants yet). No content-based
+// sizing either -- basis is whatever the app sets, since there's no
+// text-measurement system yet to size a node from its content.
+//
+// Node is a plain struct, not opaque: set direction/grow/shrink/
+// basis/gap/padding/draw/userdata directly. Only child-list membership
+// goes through node_add/node_remove, since those keep the children
+// array and parent pointer consistent.
+
+typedef struct {
+    unsigned int x;
+    unsigned int y;
+    unsigned int width;
+    unsigned int height;
+} VuiRect;
+
+typedef enum {
+    VUI_DIR_ROW,
+    VUI_DIR_COLUMN,
+} VuiDirection;
+
+typedef struct VuiNode VuiNode;
+
+// Called during node_draw() for any node that has one set. Draw
+// only within node->rect -- nothing clips for you yet.
+typedef void (*VuiDraw)(VuiNode *node, VuiScreen *scr, void *userdata);
+
+struct VuiNode {
+    VuiDirection direction;
+
+    float grow;
+    float shrink;
+    unsigned int basis;
+
+    unsigned int gap;
+    unsigned int padding;
+
+    VuiRect rect; // written by node_layout(), read by draw callbacks
+
+    VuiDraw draw;
+    void *userdata;
+
+    // internal -- use node_add()/node_remove(), don't touch directly
+    VuiNode *parent;
+    VuiNode **children;
+    unsigned int child_count;
+    unsigned int child_cap;
+};
+
+VuiNode *node_create(void);
+void node_destroy(VuiNode *node); // frees the whole subtree
+
+void node_add(VuiNode *parent, VuiNode *child);
+void node_remove(VuiNode *child);
+
+void node_layout(VuiNode *root, VuiRect available);
+void node_draw(VuiNode *node, VuiScreen *scr);
+
 #endif

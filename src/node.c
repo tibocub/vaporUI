@@ -1,0 +1,166 @@
+#include <stdlib.h>
+
+#include "../include/vaporui.h"
+
+VuiNode *node_create(void)
+{
+    VuiNode *node = calloc(1, sizeof(*node));
+
+    if (node == NULL) {
+        return NULL;
+    }
+
+    node->shrink = 1; // CSS flex-shrink defaults to 1; grow/basis/gap/padding default to 0
+
+    return node;
+}
+
+void node_destroy(VuiNode *node)
+{
+    if (node == NULL) {
+        return;
+    }
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        node_destroy(node->children[i]);
+    }
+
+    free(node->children);
+    free(node);
+}
+
+void node_add(VuiNode *parent, VuiNode *child)
+{
+    if (parent->child_count == parent->child_cap) {
+        unsigned int cap = parent->child_cap ? parent->child_cap * 2 : 4;
+        VuiNode **children = realloc(parent->children, cap * sizeof(VuiNode *));
+
+        if (children == NULL) {
+            return;
+        }
+
+        parent->children = children;
+        parent->child_cap = cap;
+    }
+
+    parent->children[parent->child_count++] = child;
+    child->parent = parent;
+}
+
+void node_remove(VuiNode *child)
+{
+    VuiNode *parent = child->parent;
+
+    if (parent == NULL) {
+        return;
+    }
+
+    for (unsigned int i = 0; i < parent->child_count; i++) {
+        if (parent->children[i] != child) {
+            continue;
+        }
+
+        for (unsigned int j = i; j + 1 < parent->child_count; j++) {
+            parent->children[j] = parent->children[j + 1];
+        }
+
+        parent->child_count--;
+        child->parent = NULL;
+        return;
+    }
+}
+
+static unsigned int sub(unsigned int a, unsigned int b)
+{
+    return a > b ? a - b : 0;
+}
+
+void node_layout(VuiNode *node, VuiRect rect)
+{
+    node->rect = rect;
+
+    if (node->child_count == 0) {
+        return;
+    }
+
+    unsigned int pad2 = node->padding * 2;
+    unsigned int inner_x = rect.x + node->padding;
+    unsigned int inner_y = rect.y + node->padding;
+    unsigned int inner_w = sub(rect.width, pad2);
+    unsigned int inner_h = sub(rect.height, pad2);
+
+    int row = (node->direction == VUI_DIR_ROW);
+    unsigned int main_size = row ? inner_w : inner_h;
+    unsigned int cross_size = row ? inner_h : inner_w;
+
+    unsigned int total_gap = node->gap * (node->child_count - 1);
+    unsigned int avail = sub(main_size, total_gap);
+
+    unsigned int basis_sum = 0;
+    float grow_sum = 0;
+    float shrink_basis_sum = 0; // CSS weighs shrink by shrink*basis, not shrink alone
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        VuiNode *c = node->children[i];
+        basis_sum += c->basis;
+        grow_sum += c->grow;
+        shrink_basis_sum += c->shrink * (float)c->basis;
+    }
+
+    int diff = (int)avail - (int)basis_sum;
+
+    unsigned int *sizes = malloc(node->child_count * sizeof(unsigned int));
+
+    if (sizes == NULL) {
+        return;
+    }
+
+    unsigned int used = 0;
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        VuiNode *c = node->children[i];
+        unsigned int size = c->basis;
+
+        if (diff > 0 && grow_sum > 0) {
+            size += (unsigned int)((float)diff * (c->grow / grow_sum));
+        } else if (diff < 0 && shrink_basis_sum > 0) {
+            float weight = (c->shrink * (float)c->basis) / shrink_basis_sum;
+            size = sub(size, (unsigned int)((float)(-diff) * weight));
+        }
+
+        sizes[i] = size;
+        used += size;
+    }
+
+    // Float distribution above can leave the row/column a cell or two
+    // short of `avail` from rounding -- hand the remainder to the
+    // last child so the total always fills exactly.
+    if (used < avail) {
+        sizes[node->child_count - 1] += avail - used;
+    }
+
+    unsigned int cursor = row ? inner_x : inner_y;
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        VuiNode *c = node->children[i];
+        VuiRect child_rect = row
+            ? (VuiRect){ .x = cursor, .y = inner_y, .width = sizes[i], .height = cross_size }
+            : (VuiRect){ .x = inner_x, .y = cursor, .width = cross_size, .height = sizes[i] };
+
+        node_layout(c, child_rect);
+        cursor += sizes[i] + node->gap;
+    }
+
+    free(sizes);
+}
+
+void node_draw(VuiNode *node, VuiScreen *scr)
+{
+    if (node->draw != NULL) {
+        node->draw(node, scr, node->userdata);
+    }
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        node_draw(node->children[i], scr);
+    }
+}
