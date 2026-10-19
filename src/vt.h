@@ -10,13 +10,15 @@ typedef enum {
 } VuiVtResult;
 
 typedef enum {
-    VUI_VT_STATE_CSI,   // expecting '[' right after ESC
-    VUI_VT_STATE_PARAM  // collecting an optional numeric param, then the final byte
+    VUI_VT_STATE_INTRO, // expecting '[' or 'O' right after ESC
+    VUI_VT_STATE_PARAM  // collecting numeric params, then the final byte
 } VuiVtState;
 
 typedef struct {
     VuiVtState state;
-    int param;
+    int param[2];
+    int index; // which param digits go into
+    int sub;   // inside a ':' sub-field, digits ignored
 } VuiVtDecoder;
 
 // Caller is expected to have already consumed the leading ESC (0x1B)
@@ -26,7 +28,7 @@ void vui_vt_reset(VuiVtDecoder *decoder);
 VuiVtResult vui_vt_feed(
     VuiVtDecoder *decoder,
     uint8_t byte,
-    VuiKey *key
+    VuiKeyEvent *event
 );
 
 #endif

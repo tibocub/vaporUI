@@ -7,12 +7,12 @@
 typedef struct {
     VuiCtx *ui;
     char status[64];
+    int running;
 } App;
 
-static const char *key_name(VuiKey key)
+static const char *base_name(const VuiKeyEvent *event)
 {
-    switch (key) {
-    case VUI_KEY_CTRL_C:    return "Ctrl-C";
+    switch (event->key) {
     case VUI_KEY_ENTER:     return "Enter";
     case VUI_KEY_BACKSPACE: return "Backspace";
     case VUI_KEY_TAB:       return "Tab";
@@ -28,6 +28,23 @@ static const char *key_name(VuiKey key)
     case VUI_KEY_PAGE_DOWN: return "Page Down";
     default:                return "?";
     }
+}
+
+static const char *key_name(const VuiKeyEvent *event, char *buf, size_t bufsize)
+{
+    VuiModifiers m = event->modifiers;
+    int n = snprintf(buf, bufsize, "%s%s%s%s",
+        (m & VUI_MOD_CTRL) ? "Ctrl-" : "",
+        (m & VUI_MOD_ALT) ? "Alt-" : "",
+        (m & VUI_MOD_SHIFT) ? "Shift-" : "",
+        event->key == VUI_KEY_CHAR ? "" : base_name(event));
+
+    if (event->key == VUI_KEY_CHAR && n > 0 && (size_t)n + 1 < bufsize) {
+        buf[n] = (char)event->character;
+        buf[n + 1] = 0;
+    }
+
+    return buf;
 }
 
 static void draw_sidebar(VuiNode *node, VuiScreen *scr, void *userdata)
@@ -64,9 +81,17 @@ static void layout_and_draw(App *app, VuiNode *root)
     vui_flush(app->ui);
 }
 
+static void act_quit(VuiCtx *ui, const VuiKeyEvent *event, void *userdata)
+{
+    (void)ui;
+    (void)event;
+
+    ((App *)userdata)->running = 0;
+}
+
 int main(void)
 {
-    App app = {0};
+    App app = { .running = 1 };
 
     app.ui = vui_init();
 
@@ -74,6 +99,9 @@ int main(void)
         fprintf(stderr, "Failed to initialize VaporUI\n");
         return 1;
     }
+
+    VuiControls *global = ctl_create();
+    ctl_bind(global, VUI_KEY_CHAR, VUI_MOD_CTRL, 'c', act_quit, &app);
 
     VuiNode *root = node_create();
     root->direction = VUI_DIR_ROW;
@@ -92,24 +120,25 @@ int main(void)
 
     layout_and_draw(&app, root);
 
-    for (;;) {
+    while (app.running) {
         VuiEvent event = vui_poll_event(app.ui);
+
+        if (event.type == VUI_EVENT_KEY && ctl_dispatch(global, app.ui, &event.key)) {
+            continue;
+        }
 
         switch (event.type) {
         case VUI_EVENT_RESIZE:
             layout_and_draw(&app, root);
             break;
 
-        case VUI_EVENT_KEY:
-            if (event.key.key == VUI_KEY_CTRL_C) {
-                node_destroy(root);
-                vui_shutdown(app.ui);
-                return 0;
-            }
+        case VUI_EVENT_KEY: {
+            char name_buf[32];
 
-            snprintf(app.status, sizeof(app.status), "key: %s", key_name(event.key.key));
+            snprintf(app.status, sizeof(app.status), "key: %s", key_name(&event.key, name_buf, sizeof(name_buf)));
             layout_and_draw(&app, root);
             break;
+        }
 
         case VUI_EVENT_TEXT: {
             uint8_t utf8[5] = {0};
@@ -124,4 +153,10 @@ int main(void)
             break;
         }
     }
+
+    node_destroy(root);
+    ctl_destroy(global);
+    vui_shutdown(app.ui);
+
+    return 0;
 }

@@ -13,8 +13,6 @@ a TUI program and vice-versa (once the TUI part
 is stable).
 
 ## TODO
-*by rough order of priority -- higher = more priority*
-
 VaporUI API:
 - [WIP] init
 - [WIP] clear
@@ -42,6 +40,13 @@ Layout:
 - [ ] content-based sizing (basis is always explicit -- no text measurement yet)
 - [ ] per-side padding (currently uniform only)
 - [ ] draw callbacks aren't clipped to their node's rect yet
+
+Controls:
+- [x] flat key -> action binding table (ctl_create/ctl_bind/ctl_dispatch)
+- [x] Ctrl+<letter> decodes generally now, not just Ctrl-C (VUI_KEY_CHAR + VuiKeyEvent.character)
+- [ ] per-node/focus-scoped controls (needs a real focusable widget first -- see widgets below)
+- [x] Alt (ESC prefix), Shift+Tab, xterm modified arrows/nav (CSI 1;m X), SS3 arrows, kitty CSI-u (any key + any modifier; enabled at init)
+- [ ] Ctrl+symbol/digit and Shift on non-letters only work on kitty-protocol terminals (no xterm modifyOtherKeys, no F-keys, no mouse yet)
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution

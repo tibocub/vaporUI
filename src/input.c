@@ -3,6 +3,7 @@
 void vui_input_reset(VuiInputDecoder *decoder)
 {
     decoder->in_escape = 0;
+    decoder->alt = 0;
     vui_utf8_reset(&decoder->utf8);
 }
 
@@ -12,6 +13,59 @@ static VuiEvent key_event(VuiKey key)
 
     event.key.key = key;
     event.key.modifiers = VUI_MOD_NONE;
+    event.key.character = 0;
+
+    return event;
+}
+
+static VuiEvent char_key_event(VuiCodepoint character, VuiModifiers modifiers)
+{
+    VuiEvent event = { .type = VUI_EVENT_KEY };
+
+    event.key.key = VUI_KEY_CHAR;
+    event.key.modifiers = modifiers;
+    event.key.character = character;
+
+    return event;
+}
+
+static VuiEvent decode_byte(VuiInputDecoder *decoder, uint8_t byte)
+{
+    VuiEvent event = { .type = VUI_EVENT_NONE };
+
+    switch (byte) {
+    case '\n':
+    case '\r': return key_event(VUI_KEY_ENTER);
+    case '\t': return key_event(VUI_KEY_TAB);
+    case 127:  return key_event(VUI_KEY_BACKSPACE);
+    case 0x1B: return key_event(VUI_KEY_ESCAPE); // only reached as Alt+Escape
+    default:   break;
+    }
+
+    // Remaining C0 control bytes are Ctrl+<letter> -- terminals send
+    // these by clearing bit 6 of the letter's ASCII code, so byte 1
+    // is Ctrl-A, byte 26 is Ctrl-Z, etc.
+    if (byte >= 1 && byte <= 26) {
+        return char_key_event('a' + (byte - 1), VUI_MOD_CTRL);
+    }
+
+    // The rest of the C0 range: NUL is Ctrl+Space, 28-31 are Ctrl+\ ] ^ _
+    if (byte == 0) {
+        return char_key_event(' ', VUI_MOD_CTRL);
+    }
+
+    if (byte >= 28 && byte <= 31) {
+        return char_key_event(byte + 64, VUI_MOD_CTRL);
+    }
+
+    {
+        uint32_t codepoint;
+
+        if (vui_utf8_feed(&decoder->utf8, byte, &codepoint) == VUI_UTF8_COMPLETE) {
+            event.type = VUI_EVENT_TEXT;
+            event.text.codepoint = codepoint;
+        }
+    }
 
     return event;
 }
@@ -21,43 +75,46 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
     VuiEvent event = { .type = VUI_EVENT_NONE };
 
     if (decoder->in_escape) {
-        VuiKey key;
-
-        switch (vui_vt_feed(&decoder->vt, byte, &key)) {
-        case VUI_VT_NEED_MORE:
-            return event;
-
-        case VUI_VT_COMPLETE:
+        // ESC followed by anything but '[' / 'O' is Alt+<that key>
+        if (decoder->vt.state == VUI_VT_STATE_INTRO && byte != '[' && byte != 'O') {
             decoder->in_escape = 0;
-            return key_event(key);
+            decoder->alt = 1;
+        } else {
+            VuiKeyEvent key;
 
-        case VUI_VT_INVALID:
-            decoder->in_escape = 0;
-            return event;
+            switch (vui_vt_feed(&decoder->vt, byte, &key)) {
+            case VUI_VT_NEED_MORE:
+                return event;
+
+            case VUI_VT_COMPLETE:
+                decoder->in_escape = 0;
+                event.type = VUI_EVENT_KEY;
+                event.key = key;
+                return event;
+
+            case VUI_VT_INVALID:
+                decoder->in_escape = 0;
+                return event;
+            }
         }
     }
 
-    if (byte == 0x1B) {
+    if (byte == 0x1B && !decoder->alt) {
         decoder->in_escape = 1;
         vui_vt_reset(&decoder->vt);
         return event;
     }
 
-    switch (byte) {
-    case 3:    return key_event(VUI_KEY_CTRL_C);
-    case '\n':
-    case '\r': return key_event(VUI_KEY_ENTER);
-    case '\t': return key_event(VUI_KEY_TAB);
-    case 127:  return key_event(VUI_KEY_BACKSPACE);
-    default:   break;
-    }
+    event = decode_byte(decoder, byte);
 
-    {
-        uint32_t codepoint;
+    if (decoder->alt && event.type != VUI_EVENT_NONE) {
+        decoder->alt = 0;
 
-        if (vui_utf8_feed(&decoder->utf8, byte, &codepoint) == VUI_UTF8_COMPLETE) {
-            event.type = VUI_EVENT_TEXT;
-            event.text.codepoint = codepoint;
+        // Alt+text is a key, not text to insert
+        if (event.type == VUI_EVENT_TEXT) {
+            event = char_key_event(event.text.codepoint, VUI_MOD_ALT);
+        } else {
+            event.key.modifiers |= VUI_MOD_ALT;
         }
     }
 

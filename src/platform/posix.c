@@ -64,11 +64,19 @@ int vui_platform_init(void)
 
     vui_input_reset(&input_decoder);
 
+    // kitty keyboard protocol, 'disambiguate' level: lets terminals that
+    // support it report Ctrl/Alt/Shift on any key. Others ignore it.
+    fputs("\033[>1u", stdout);
+    fflush(stdout);
+
     return 0; 
 }
 
 void vui_platform_shutdown(void)
 {
+    fputs("\033[<u", stdout);
+    fflush(stdout);
+
     tcsetattr(
         STDIN_FILENO,
         TCSAFLUSH,

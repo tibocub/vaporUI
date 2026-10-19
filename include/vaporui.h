@@ -29,7 +29,7 @@ typedef enum {
 typedef enum {
     VUI_KEY_NONE = 0,
 
-    VUI_KEY_CTRL_C,
+    VUI_KEY_CHAR, // a letter/digit + modifiers, e.g. Ctrl-D; see VuiKeyEvent.character
 
     VUI_KEY_ENTER,
     VUI_KEY_BACKSPACE,
@@ -51,6 +51,7 @@ typedef enum {
 typedef struct {
     VuiKey key;
     VuiModifiers modifiers;
+    VuiCodepoint character; // valid when key == VUI_KEY_CHAR
 } VuiKeyEvent;
 
 typedef struct {
@@ -193,5 +194,33 @@ void node_remove(VuiNode *child);
 
 void node_layout(VuiNode *root, VuiRect available);
 void node_draw(VuiNode *node, VuiScreen *scr);
+
+// -- Controls --
+//
+// A flat key -> action binding table. Doesn't know about the tree or
+// focus -- that's the app's job for now: keep one global VuiControls
+// checked first (unconditional, e.g. Ctrl-C to quit) and dispatch to
+// a more specific one only if global didn't handle it. Once nodes can
+// be focused, a node-owned VuiControls slots into the same dispatch
+// call, no change needed here.
+
+typedef void (*VuiAction)(VuiCtx *ui, const VuiKeyEvent *event, void *userdata);
+
+typedef struct VuiControls VuiControls;
+
+VuiControls *ctl_create(void);
+void ctl_destroy(VuiControls *c);
+
+// Binding the same key again replaces the previous action instead of
+// shadowing it silently.
+void ctl_bind(
+    VuiControls *c,
+    VuiKey key, VuiModifiers modifiers, VuiCodepoint character,
+    VuiAction action, void *userdata
+);
+
+// Returns 1 and fires the action if this event matches a binding, 0
+// otherwise.
+int ctl_dispatch(VuiControls *c, VuiCtx *ui, const VuiKeyEvent *event);
 
 #endif
