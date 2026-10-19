@@ -12,6 +12,18 @@ banckend to compile GUI out of the same code of
 a TUI program and vice-versa (once the TUI part
 is stable).
 
+## Examples and tests
+`make` builds every `examples/*.c` into `build/`. They are both the
+how-to for building UIs with vaporUI and the manual regression suite:
+each file's header comment lists what to verify, and every example
+must keep working as features land. New feature or widget -> new
+example (or extend one).
+
+- `input-handling`: keys, modifiers, mouse, paste, resize, global controls
+- `layout-resize`: nested flexbox panes, live resize
+
+`make test` runs the automated checks (`tests/`): the input decoder.
+
 ## TODO
 VaporUI API:
 - [WIP] init

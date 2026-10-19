@@ -1,3 +1,17 @@
+// input-handling: shows every input event vaporUI can report.
+//
+// Verify (this example must keep working as features are added):
+//   - type letters / unicode (é, 日)    -> "text: ..." with the codepoint
+//   - Ctrl-, Alt- and Shift- combos      -> "key: Ctrl-Alt-x", arrows, F1-F12...
+//   - Ctrl-$ / Ctrl-1 / Shift-Enter      -> only on kitty-protocol terminals
+//   - click, drag, wheel                 -> "mouse: ..." and a '+' at the pointer
+//   - paste multi-line text              -> "pasting..." then the last character
+//   - resize the window                  -> resolution line updates
+//   - Ctrl-C                             -> quits and restores the terminal
+//
+// Also shows: a global VuiControls binding (Ctrl-C) checked before the
+// event switch, the pattern for app-wide shortcuts.
+
 #include <stdint.h>
 #include <stdio.h>
 
@@ -8,6 +22,8 @@ typedef struct {
     VuiCtx *ui;
     char status[64];
     int running;
+    int has_mouse;
+    unsigned int mouse_x, mouse_y;
 } App;
 
 static const char *base_name(const VuiKeyEvent *event)
@@ -59,7 +75,7 @@ static void draw_sidebar(VuiNode *node, VuiScreen *scr, void *userdata)
     (void)userdata;
     VuiRect r = node->rect;
 
-    scr_puts(scr, r.x, r.y, "vaporUI hello", (VuiStyle){ .attr = VUI_ATTR_BOLD });
+    scr_puts(scr, r.x, r.y, "input-handling", (VuiStyle){ .attr = VUI_ATTR_BOLD });
     scr_puts(scr, r.x, r.y + 2, "Ctrl-C to quit", (VuiStyle){0});
 }
 
@@ -85,6 +101,10 @@ static void layout_and_draw(App *app, VuiNode *root)
 
     vui_clear(app->ui);
     node_draw(root, vui_screen(app->ui));
+    if (app->has_mouse) {
+        scr_set(vui_screen(app->ui), app->mouse_x, app->mouse_y, '+', (VuiStyle){ .fg = VUI_COLOR_RED, .attr = VUI_ATTR_BOLD });
+    }
+
     vui_flush(app->ui);
 }
 
@@ -142,6 +162,9 @@ int main(void)
             break;
 
         case VUI_EVENT_MOUSE:
+            app.has_mouse = 1;
+            app.mouse_x = event.mouse.x;
+            app.mouse_y = event.mouse.y;
             snprintf(app.status, sizeof(app.status), "mouse: btn %d act %d at %u,%u",
                 event.mouse.button, event.mouse.action, event.mouse.x, event.mouse.y);
             layout_and_draw(&app, root);
