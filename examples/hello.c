@@ -107,6 +107,8 @@ int main(void)
         return 1;
     }
 
+    vui_set_mouse(app.ui, 1);
+
     VuiControls *global = ctl_create();
     ctl_bind(global, VUI_KEY_CHAR, VUI_MOD_CTRL, 'c', act_quit, &app);
 
@@ -136,6 +138,20 @@ int main(void)
 
         switch (event.type) {
         case VUI_EVENT_RESIZE:
+            layout_and_draw(&app, root);
+            break;
+
+        case VUI_EVENT_MOUSE:
+            snprintf(app.status, sizeof(app.status), "mouse: btn %d act %d at %u,%u",
+                event.mouse.button, event.mouse.action, event.mouse.x, event.mouse.y);
+            layout_and_draw(&app, root);
+            break;
+
+        case VUI_EVENT_PASTE_START:
+            snprintf(app.status, sizeof(app.status), "pasting...");
+            break;
+
+        case VUI_EVENT_PASTE_END:
             layout_and_draw(&app, root);
             break;
 

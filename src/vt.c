@@ -10,19 +10,48 @@ void vui_vt_reset(VuiVtDecoder *decoder)
     decoder->state = VUI_VT_STATE_INTRO;
     decoder->param[0] = 0;
     decoder->param[1] = 0;
+    decoder->param[2] = 0;
+    decoder->mouse = 0;
     decoder->index = 0;
     decoder->sub = 0;
 }
 
-static VuiVtResult done(VuiKeyEvent *event, VuiKey key, int mod)
+static VuiVtResult done(VuiEvent *event, VuiKey key, int mod)
 {
-    event->key = key;
-    event->modifiers = mod > 1 ? (VuiModifiers)((mod - 1) & 15) : VUI_MOD_NONE;
-    event->character = 0;
+    event->type = VUI_EVENT_KEY;
+    event->key.key = key;
+    event->key.modifiers = mod > 1 ? (VuiModifiers)((mod - 1) & 15) : VUI_MOD_NONE;
+    event->key.character = 0;
     return VUI_VT_COMPLETE;
 }
 
-VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiKeyEvent *event)
+static VuiVtResult marker(VuiEvent *event, VuiEventType type)
+{
+    event->type = type;
+    return VUI_VT_COMPLETE;
+}
+
+// SGR mouse: CSI < b ; x ; y (M press | m release). b's low 2 bits are
+// the button, +4 shift, +8 alt, +16 ctrl, +32 motion, +64 wheel.
+static VuiVtResult mouse(VuiVtDecoder *decoder, uint8_t final, VuiEvent *event)
+{
+    static const VuiMouseButton buttons[] = { VUI_MOUSE_LEFT, VUI_MOUSE_MIDDLE, VUI_MOUSE_RIGHT, VUI_MOUSE_NONE };
+    int b = decoder->param[0];
+
+    if (decoder->param[1] < 1 || decoder->param[2] < 1) {
+        return VUI_VT_INVALID;
+    }
+
+    event->type = VUI_EVENT_MOUSE;
+    event->mouse.button = (b & 64) ? VUI_MOUSE_WHEEL_UP + (b & 3) : buttons[b & 3];
+    event->mouse.action = (b & 32) ? VUI_MOUSE_MOVE : final == 'M' ? VUI_MOUSE_PRESS : VUI_MOUSE_RELEASE;
+    event->mouse.modifiers = ((b & 4) ? VUI_MOD_SHIFT : 0) | ((b & 8) ? VUI_MOD_ALT : 0) | ((b & 16) ? VUI_MOD_CTRL : 0);
+    event->mouse.x = decoder->param[1] - 1;
+    event->mouse.y = decoder->param[2] - 1;
+    return VUI_VT_COMPLETE;
+}
+
+VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
 {
     int mod = decoder->param[1];
 
@@ -35,9 +64,14 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiKeyEvent *event)
         return VUI_VT_NEED_MORE;
     }
 
+    if (byte == '<' && decoder->index == 0 && decoder->param[0] == 0) {
+        decoder->mouse = 1;
+        return VUI_VT_NEED_MORE;
+    }
+
     if (byte >= '0' && byte <= '9') {
-        // shortcut: only the first two params are kept, rest are dropped
-        if (!decoder->sub && decoder->index < 2) {
+        // shortcut: only the first three params are kept, rest are dropped
+        if (!decoder->sub && decoder->index < 3) {
             decoder->param[decoder->index] = decoder->param[decoder->index] * 10 + (byte - '0');
         }
         return VUI_VT_NEED_MORE;
@@ -53,6 +87,10 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiKeyEvent *event)
     if (byte == ':') {
         decoder->sub = 1;
         return VUI_VT_NEED_MORE;
+    }
+
+    if (decoder->mouse) {
+        return (byte == 'M' || byte == 'm') ? mouse(decoder, byte, event) : VUI_VT_INVALID;
     }
 
     switch (byte) {
@@ -74,6 +112,8 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiKeyEvent *event)
         switch (decoder->param[0]) {
         case 1: case 7: return done(event, VUI_KEY_HOME, mod);
         case 2:         return done(event, VUI_KEY_INSERT, mod);
+        case 200:       return marker(event, VUI_EVENT_PASTE_START);
+        case 201:       return marker(event, VUI_EVENT_PASTE_END);
         case 3:         return done(event, VUI_KEY_DELETE, mod);
         case 4: case 8: return done(event, VUI_KEY_END, mod);
         case 5:         return done(event, VUI_KEY_PAGE_UP, mod);
@@ -96,7 +136,7 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiKeyEvent *event)
         case 0:   return VUI_VT_INVALID;
         default:
             done(event, VUI_KEY_CHAR, mod);
-            event->character = decoder->param[0];
+            event->key.character = decoder->param[0];
             return VUI_VT_COMPLETE;
         }
 

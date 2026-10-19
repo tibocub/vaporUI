@@ -4,6 +4,7 @@ void vui_input_reset(VuiInputDecoder *decoder)
 {
     decoder->in_escape = 0;
     decoder->alt = 0;
+    decoder->in_paste = 0;
     vui_utf8_reset(&decoder->utf8);
 }
 
@@ -32,6 +33,22 @@ static VuiEvent char_key_event(VuiCodepoint character, VuiModifiers modifiers)
 static VuiEvent decode_byte(VuiInputDecoder *decoder, uint8_t byte)
 {
     VuiEvent event = { .type = VUI_EVENT_NONE };
+
+    // Pasted bytes are plain text, control characters included
+    if (decoder->in_paste) {
+        uint32_t codepoint;
+
+        if (byte == '\r') {
+            byte = '\n';
+        }
+
+        if (vui_utf8_feed(&decoder->utf8, byte, &codepoint) == VUI_UTF8_COMPLETE) {
+            event.type = VUI_EVENT_TEXT;
+            event.text.codepoint = codepoint;
+        }
+
+        return event;
+    }
 
     switch (byte) {
     case '\n':
@@ -80,17 +97,24 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
             decoder->in_escape = 0;
             decoder->alt = 1;
         } else {
-            VuiKeyEvent key;
+            VuiEvent parsed;
 
-            switch (vui_vt_feed(&decoder->vt, byte, &key)) {
+            switch (vui_vt_feed(&decoder->vt, byte, &parsed)) {
             case VUI_VT_NEED_MORE:
                 return event;
 
             case VUI_VT_COMPLETE:
                 decoder->in_escape = 0;
-                event.type = VUI_EVENT_KEY;
-                event.key = key;
-                return event;
+
+                if (parsed.type == VUI_EVENT_PASTE_START) {
+                    decoder->in_paste = 1;
+                } else if (parsed.type == VUI_EVENT_PASTE_END) {
+                    decoder->in_paste = 0;
+                } else if (decoder->in_paste) {
+                    return event; // stray sequence inside a paste
+                }
+
+                return parsed;
 
             case VUI_VT_INVALID:
                 decoder->in_escape = 0;

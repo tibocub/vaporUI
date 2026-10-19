@@ -15,7 +15,10 @@ typedef enum {
     VUI_EVENT_NONE,
     VUI_EVENT_KEY,
     VUI_EVENT_TEXT,
-    VUI_EVENT_RESIZE
+    VUI_EVENT_RESIZE,
+    VUI_EVENT_MOUSE,
+    VUI_EVENT_PASTE_START, // pasted content follows as VUI_EVENT_TEXT (newlines as '\n')
+    VUI_EVENT_PASTE_END
 } VuiEventType;
 
 typedef enum {
@@ -59,11 +62,36 @@ typedef struct {
     VuiCodepoint character; // valid when key == VUI_KEY_CHAR
 } VuiKeyEvent;
 
+typedef enum {
+    VUI_MOUSE_NONE, // motion with no button held
+    VUI_MOUSE_LEFT,
+    VUI_MOUSE_MIDDLE,
+    VUI_MOUSE_RIGHT,
+    VUI_MOUSE_WHEEL_UP,
+    VUI_MOUSE_WHEEL_DOWN,
+    VUI_MOUSE_WHEEL_LEFT,
+    VUI_MOUSE_WHEEL_RIGHT
+} VuiMouseButton;
+
+typedef enum {
+    VUI_MOUSE_PRESS,
+    VUI_MOUSE_RELEASE,
+    VUI_MOUSE_MOVE // motion, button says which one is held (if any)
+} VuiMouseAction;
+
+typedef struct {
+    VuiMouseButton button;
+    VuiMouseAction action;
+    VuiModifiers modifiers;
+    unsigned int x, y; // cell coordinates, 0-based
+} VuiMouseEvent;
+
 typedef struct {
     VuiEventType type;
 
     union {
         VuiKeyEvent key;
+        VuiMouseEvent mouse;
 
         struct {
             VuiCodepoint codepoint;
@@ -83,6 +111,12 @@ void vui_clear(VuiCtx *ui);
 void vui_flush(VuiCtx *ui);
 
 VuiEvent vui_poll_event(VuiCtx *ui);
+
+// Opt-in: reporting mouse input disables the terminal's own text
+// selection. Uses xterm SGR (1006) reporting, so anything that speaks
+// that protocol (every modern terminal, or a vaporOS terminal / GPM
+// shim that emits it) works without a backend change.
+void vui_set_mouse(VuiCtx *ui, int enable);
 
 // -- Screen buffer --
 //

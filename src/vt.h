@@ -16,8 +16,9 @@ typedef enum {
 
 typedef struct {
     VuiVtState state;
-    int param[2];
+    int param[3];
     int index; // which param digits go into
+    int mouse; // CSI '<' seen: SGR mouse report
     int sub;   // inside a ':' sub-field, digits ignored
 } VuiVtDecoder;
 
@@ -28,7 +29,7 @@ void vui_vt_reset(VuiVtDecoder *decoder);
 VuiVtResult vui_vt_feed(
     VuiVtDecoder *decoder,
     uint8_t byte,
-    VuiKeyEvent *event
+    VuiEvent *event
 );
 
 #endif

@@ -66,7 +66,7 @@ int vui_platform_init(void)
 
     // kitty keyboard protocol, 'disambiguate' level: lets terminals that
     // support it report Ctrl/Alt/Shift on any key. Others ignore it.
-    fputs("\033[>1u", stdout);
+    fputs("\033[>1u\033[?2004h", stdout); // + bracketed paste
     fflush(stdout);
 
     return 0; 
@@ -74,7 +74,7 @@ int vui_platform_init(void)
 
 void vui_platform_shutdown(void)
 {
-    fputs("\033[<u", stdout);
+    fputs("\033[?1006l\033[?1002l\033[?1000l\033[?2004l\033[<u", stdout);
     fflush(stdout);
 
     tcsetattr(
@@ -82,6 +82,13 @@ void vui_platform_shutdown(void)
         TCSAFLUSH,
         &original_termios
     );
+}
+
+void vui_platform_set_mouse(int enable)
+{
+    // 1000 clicks + wheel, 1002 drag motion, 1006 SGR encoding (no 223 col limit)
+    fputs(enable ? "\033[?1000h\033[?1002h\033[?1006h" : "\033[?1006l\033[?1002l\033[?1000l", stdout);
+    fflush(stdout);
 }
 
 int vui_platform_get_size(VuiSize *size)

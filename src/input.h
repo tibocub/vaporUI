@@ -9,6 +9,7 @@
 
 typedef struct {
     int in_escape;
+    int in_paste; // between PASTE_START and PASTE_END
     int alt; // ESC prefixed the char being decoded
     VuiVtDecoder vt;
     VuiUtf8Decoder utf8;

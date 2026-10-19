@@ -13,6 +13,7 @@ void vui_platform_shutdown(void);
 int vui_platform_get_size(VuiSize *size);
 void vui_platform_clear(void);
 VuiEvent vui_platform_poll_event(void);
+void vui_platform_set_mouse(int enable);
 
 VuiCtx *vui_init(void)
 {
@@ -96,4 +97,10 @@ VuiEvent vui_poll_event(VuiCtx *ui)
     }
 
     return event;
+}
+
+void vui_set_mouse(VuiCtx *ui, int enable)
+{
+    (void)ui;
+    vui_platform_set_mouse(enable);
 }
