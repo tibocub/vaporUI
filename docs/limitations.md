@@ -20,7 +20,7 @@ Current limits, in one place. Update this file when one is lifted.
   while the app still holds raw pointers into it is on the app.
 
 **Input**: see `input.md`: Ctrl+symbol / Ctrl+accented keys need a terminal with modifyOtherKeys or
-the kitty protocol; no X10 mouse; no focus events; the Escape key has a 50 ms disambiguation delay.
+the kitty protocol; no X10 mouse; no focus events; the Escape key has a 25 ms disambiguation delay.
 
 **Platforms**
 - Only the POSIX backend exists (Linux/macOS/BSD; NuttX untested). Windows needs either a terminal

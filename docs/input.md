@@ -42,7 +42,7 @@ On Windows, AltGr is reported by Windows as Ctrl+Alt; not tested yet.
 
 ### Known quirks
 
-- A lone `Escape` is recognised after a 50 ms timeout (`VUI_ESCAPE_TIMEOUT_MS` in `posix.c`).
+- A lone `Escape` is recognised after a 25 ms timeout (`VUI_ESCAPE_TIMEOUT_MS` in `posix.c`).
   `ESC` then a key sent much later arrives as two events.
 - Legacy `Ctrl-H` is byte 8, which is also what many terminals send for Ctrl+Backspace.
   `Ctrl-I` is Tab, `Ctrl-M` is Enter, `Ctrl-[` is Escape: those are indistinguishable in tier 1.
