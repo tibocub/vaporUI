@@ -182,40 +182,12 @@ VuiInput *input_create(unsigned int max_chars)
 
 void input_set_text(VuiInput *in, const char *utf8)
 {
-    VuiUtf8Decoder d;
-    uint32_t cp;
-
-    vui_utf8_reset(&d);
-    in->len = in->cursor = in->left = 0;
-
-    for (; *utf8 != '\0' && in->len < in->cap; utf8++) {
-        if (vui_utf8_feed(&d, (uint8_t)*utf8, &cp) == VUI_UTF8_COMPLETE) {
-            in->text[in->len++] = cp;
-        }
-    }
-
+    in->len = vui_utf8_to_cps(utf8, in->text, in->cap);
     in->cursor = in->len;
+    in->left = 0;
 }
 
 size_t input_get_text(const VuiInput *in, char *out, size_t size)
 {
-    size_t n = 0;
-
-    for (unsigned int i = 0; i < in->len && size > 0; i++) {
-        uint8_t buf[4];
-        int len = vui_utf8_encode(in->text[i], buf);
-
-        if (n + len + 1 > size) {
-            break;
-        }
-
-        memcpy(out + n, buf, len);
-        n += len;
-    }
-
-    if (size > 0) {
-        out[n] = '\0';
-    }
-
-    return n;
+    return vui_cps_to_utf8(in->text, in->len, out, size);
 }

@@ -58,7 +58,7 @@ and is what draw callbacks and hit testing use.
 - Keys, text and paste go to the focused node. Mouse events go to the deepest node under the pointer
   (a left press also focuses the nearest focusable ancestor).
 - Tab / Shift-Tab move focus through `focusable` nodes in tree order. A focused node with
-  `wants_tab = 1` gets the Tab first (for a future text area); if it returns 0, focus moves anyway.
+  `wants_tab = 1` gets the Tab first (the text area does); if it returns 0, focus moves anyway. Ctrl-Tab always moves focus.
 - `node->focused` and `node->hovered` are maintained for you; read them in draw callbacks.
 - Global shortcuts: check a `VuiControls` table (`ctl_bind` / `ctl_dispatch`) before `vui_dispatch`.
 

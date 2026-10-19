@@ -31,6 +31,7 @@ example (or extend one).
 - `borders`: border and div containers
 - `buttons-and-lists`: button, checklist, radio list, hover
 - `text-input`: single-line input fields
+- `text-area`: multi-line editor
 
 `make test` runs the automated checks (`tests/`): the input decoder.
 `tests/screen.py build/<example> ROWS COLS -- '\t' 'text' ...` runs an example in a pty, sends keys/mouse
@@ -91,6 +92,6 @@ VaporUI widgets:
 - [x] radio button
 - [x] check-list
 - [x] text input (single line)
-- [ ] text area (multi-line)
+- [x] text area (multi-line; no wrapping/selection/undo yet)
 - [ ] form
 - [ ] tree

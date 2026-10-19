@@ -30,6 +30,10 @@ void node_destroy(VuiNode *node)
         node_destroy(node->children[i]);
     }
 
+    if (node->destroy != NULL) {
+        node->destroy(node);
+    }
+
     free(node->children);
     free(node);
 }

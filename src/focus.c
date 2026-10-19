@@ -134,8 +134,10 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
 
     switch (event->type) {
     case VUI_EVENT_KEY:
-        if (event->key.key == VUI_KEY_TAB && (event->key.modifiers & ~VUI_MOD_SHIFT) == 0) {
-            if (vui_focus(ui) != NULL && vui_focus(ui)->wants_tab && bubble(vui_focus(ui), ui, event)) {
+        // Ctrl-Tab always moves focus, even out of a node that wants Tab
+        if (event->key.key == VUI_KEY_TAB && (event->key.modifiers & ~(VUI_MOD_SHIFT | VUI_MOD_CTRL)) == 0) {
+            if (!(event->key.modifiers & VUI_MOD_CTRL) && vui_focus(ui) != NULL
+                && vui_focus(ui)->wants_tab && bubble(vui_focus(ui), ui, event)) {
                 return 1;
             }
 

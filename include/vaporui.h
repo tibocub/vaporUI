@@ -227,6 +227,7 @@ struct VuiNode {
 
     VuiDraw draw;
     VuiOnEvent on_event;
+    void (*destroy)(VuiNode *node); // called by node_destroy, for widgets owning memory
     void *userdata; // free for the app to use
 
     int focusable;  // reachable with Tab and by clicking
@@ -371,5 +372,31 @@ VuiInput *input_create(unsigned int max_chars);
 void input_set_text(VuiInput *input, const char *utf8);
 // Copies the text as NUL-terminated UTF-8, truncated to fit; returns its length in bytes.
 size_t input_get_text(const VuiInput *input, char *out, size_t size);
+
+// Multi-line text editor. The text is one buffer of characters with '\n'
+// between lines; it grows as needed up to max_chars (0 = unlimited).
+// Keys: arrows (Up/Down remember the column), Home/End, Ctrl-Home/End,
+// PageUp/PageDown, Ctrl/Alt+Left/Right (words), Enter, Tab (inserts
+// spaces up to the next multiple of tab_width), Backspace/Delete,
+// Ctrl-W / Ctrl-Backspace, Ctrl-U (to line start), Ctrl-K (to line end,
+// or joins the next line), wheel, click, paste. Shift-Tab and Ctrl-Tab
+// leave the field. Lines scroll sideways, they are not wrapped.
+typedef struct {
+    VuiNode node;
+    VuiCodepoint *text;
+    unsigned int len, cap, max;
+    unsigned int cursor; // index into text
+    unsigned int want;   // column Up/Down try to return to
+    unsigned int top;    // index of the first visible line's start
+    unsigned int left;   // first visible column
+    unsigned int tab_width;
+    int reveal;          // scroll to the cursor on next draw
+    void (*on_change)(VuiNode *textarea);
+} VuiTextarea;
+
+VuiTextarea *textarea_create(unsigned int max_chars);
+void textarea_set_text(VuiTextarea *ta, const char *utf8);
+size_t textarea_get_text(const VuiTextarea *ta, char *out, size_t size);
+void textarea_cursor_pos(const VuiTextarea *ta, unsigned int *line, unsigned int *column); // 0-based
 
 #endif

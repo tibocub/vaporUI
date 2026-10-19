@@ -6,7 +6,7 @@ Current limits, in one place. Update this file when one is lifted.
 - 8 ANSI colors + bold / underline / reverse only. No 256/truecolor, no theming yet.
 - No wide (double-width) characters: every codepoint is one cell, so CJK/emoji misalign. Applies to
   `scr_puts`, the input field and button label centering (labels are assumed ASCII).
-- No real terminal cursor: the input field draws its own reversed cell.
+- The terminal's cursor is hidden; input fields and the text area draw their own reversed cell.
 
 **Layout**
 - No content-based sizing: give widgets `basis` / `grow`.
@@ -14,8 +14,8 @@ Current limits, in one place. Update this file when one is lifted.
 
 **Widgets / events**
 - Buttons activate on mouse *press*, not release.
-- Tab always moves focus unless the focused node sets `wants_tab` and handles it (no shipped widget does yet).
-- `VuiInput` stores fixed-capacity UTF-32; no undo, selection or multi-line (text area is not written).
+- Tab moves focus unless the focused node sets `wants_tab` and handles it (the text area does: use Shift-Tab, or Ctrl-Tab where the terminal sends it).
+- `VuiInput` has a fixed capacity; both it and `VuiTextarea` store UTF-32 and have no undo, selection, clipboard copy, auto-indent or line wrapping. The text area finds lines by scanning the buffer, fine for thousands of lines, not for huge files.
 - Focus/hover pointers are validated against the tree on each dispatch, but destroying a subtree
   while the app still holds raw pointers into it is on the app.
 

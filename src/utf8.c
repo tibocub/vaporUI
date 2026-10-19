@@ -103,3 +103,43 @@ int vui_utf8_encode(uint32_t codepoint, uint8_t *buf)
 
     return 0;
 }
+
+unsigned int vui_utf8_to_cps(const char *str, uint32_t *out, unsigned int cap)
+{
+    VuiUtf8Decoder d;
+    unsigned int n = 0;
+
+    vui_utf8_reset(&d);
+
+    for (; *str != '\0' && n < cap; str++) {
+        if (vui_utf8_feed(&d, (uint8_t)*str, &out[n]) == VUI_UTF8_COMPLETE) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+size_t vui_cps_to_utf8(const uint32_t *cps, unsigned int n, char *out, size_t size)
+{
+    size_t used = 0;
+
+    for (unsigned int i = 0; i < n; i++) {
+        uint8_t buf[4];
+        int len = vui_utf8_encode(cps[i], buf);
+
+        if (used + len + 1 > size) {
+            break;
+        }
+
+        for (int j = 0; j < len; j++) {
+            out[used++] = (char)buf[j];
+        }
+    }
+
+    if (size > 0) {
+        out[used] = '\0';
+    }
+
+    return used;
+}
