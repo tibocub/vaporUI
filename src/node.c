@@ -2,9 +2,9 @@
 
 #include "../include/vaporui.h"
 
-VuiNode *node_create(void)
+VuiNode *node_alloc(size_t size)
 {
-    VuiNode *node = calloc(1, sizeof(*node));
+    VuiNode *node = calloc(1, size);
 
     if (node == NULL) {
         return NULL;
@@ -13,6 +13,11 @@ VuiNode *node_create(void)
     node->shrink = 1; // CSS flex-shrink defaults to 1; grow/basis/gap/padding default to 0
 
     return node;
+}
+
+VuiNode *node_create(void)
+{
+    return node_alloc(sizeof(VuiNode));
 }
 
 void node_destroy(VuiNode *node)
@@ -156,6 +161,17 @@ void node_layout(VuiNode *node, VuiRect rect)
 
 void node_draw(VuiNode *node, VuiScreen *scr)
 {
+    VuiRect outer = scr_clip(scr, (VuiRect){0});
+    unsigned int x0 = node->rect.x > outer.x ? node->rect.x : outer.x;
+    unsigned int y0 = node->rect.y > outer.y ? node->rect.y : outer.y;
+    unsigned int x1 = node->rect.x + node->rect.width;
+    unsigned int y1 = node->rect.y + node->rect.height;
+
+    if (x1 > outer.x + outer.width) x1 = outer.x + outer.width;
+    if (y1 > outer.y + outer.height) y1 = outer.y + outer.height;
+
+    scr_clip(scr, (VuiRect){ x0, y0, sub(x1, x0), sub(y1, y0) });
+
     if (node->draw != NULL) {
         node->draw(node, scr, node->userdata);
     }
@@ -163,4 +179,6 @@ void node_draw(VuiNode *node, VuiScreen *scr)
     for (unsigned int i = 0; i < node->child_count; i++) {
         node_draw(node->children[i], scr);
     }
+
+    scr_clip(scr, outer);
 }

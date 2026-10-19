@@ -9,6 +9,7 @@ struct VuiScreen {
     unsigned int height;
     VuiCell *front; // what's actually on the terminal right now
     VuiCell *back;  // what the app has drawn, not yet flushed
+    VuiRect clip;
 };
 
 static VuiCell blank_cell(void)
@@ -60,6 +61,7 @@ VuiScreen *scr_create(unsigned int width, unsigned int height)
 
     fill(scr->front, n, sentinel_cell());
     fill(scr->back, n, blank_cell());
+    scr->clip = (VuiRect){ 0, 0, width, height };
 
     return scr;
 }
@@ -96,6 +98,7 @@ void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height)
     // meaningful way -- force a full redraw instead of reflowing it.
     fill(scr->front, n, sentinel_cell());
     fill(scr->back, n, blank_cell());
+    scr->clip = (VuiRect){ 0, 0, width, height };
 }
 
 unsigned int scr_width(VuiScreen *scr)
@@ -110,7 +113,10 @@ unsigned int scr_height(VuiScreen *scr)
 
 void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style)
 {
-    if (x >= scr->width || y >= scr->height) {
+    VuiRect c = scr->clip;
+
+    if (x >= scr->width || y >= scr->height || x < c.x || y < c.y
+        || x - c.x >= c.width || y - c.y >= c.height) {
         return;
     }
 
@@ -132,6 +138,23 @@ void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *str, V
             scr_set(scr, x++, y, cp, style);
         }
     }
+}
+
+void scr_fill(VuiScreen *scr, VuiRect rect, VuiCodepoint cp, VuiStyle style)
+{
+    for (unsigned int y = 0; y < rect.height; y++) {
+        for (unsigned int x = 0; x < rect.width; x++) {
+            scr_set(scr, rect.x + x, rect.y + y, cp, style);
+        }
+    }
+}
+
+VuiRect scr_clip(VuiScreen *scr, VuiRect clip)
+{
+    VuiRect old = scr->clip;
+
+    scr->clip = clip;
+    return old;
 }
 
 void scr_clear(VuiScreen *scr, VuiStyle style)

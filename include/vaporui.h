@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 
 #ifndef VAPORUI_H
@@ -118,6 +119,13 @@ VuiEvent vui_poll_event(VuiCtx *ui);
 // shim that emits it) works without a backend change.
 void vui_set_mouse(VuiCtx *ui, int enable);
 
+typedef struct {
+    unsigned int x;
+    unsigned int y;
+    unsigned int width;
+    unsigned int height;
+} VuiRect;
+
 // -- Screen buffer --
 //
 // Double-buffered cell grid: draw into it with scr_set/scr_puts,
@@ -170,6 +178,11 @@ unsigned int scr_height(VuiScreen *scr);
 void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style);
 void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *utf8, VuiStyle style);
 void scr_clear(VuiScreen *scr, VuiStyle style);
+void scr_fill(VuiScreen *scr, VuiRect rect, VuiCodepoint cp, VuiStyle style);
+
+// Drawing outside the clip rect is ignored. node_draw() sets it to the
+// node's rect for you; the previous clip is returned so it can be restored.
+VuiRect scr_clip(VuiScreen *scr, VuiRect clip);
 void scr_flush(VuiScreen *scr);
 
 // -- Element tree / layout --
@@ -185,13 +198,6 @@ void scr_flush(VuiScreen *scr);
 // goes through node_add/node_remove, since those keep the children
 // array and parent pointer consistent.
 
-typedef struct {
-    unsigned int x;
-    unsigned int y;
-    unsigned int width;
-    unsigned int height;
-} VuiRect;
-
 typedef enum {
     VUI_DIR_ROW,
     VUI_DIR_COLUMN,
@@ -199,9 +205,12 @@ typedef enum {
 
 typedef struct VuiNode VuiNode;
 
-// Called during node_draw() for any node that has one set. Draw
-// only within node->rect -- nothing clips for you yet.
+// Called during node_draw() for any node that has one set. Drawing
+// is clipped to node->rect.
 typedef void (*VuiDraw)(VuiNode *node, VuiScreen *scr, void *userdata);
+
+// Return 1 if the event was handled, 0 to let it bubble to the parent.
+typedef int (*VuiOnEvent)(VuiNode *node, VuiCtx *ui, const VuiEvent *event);
 
 struct VuiNode {
     VuiDirection direction;
@@ -216,7 +225,11 @@ struct VuiNode {
     VuiRect rect; // written by node_layout(), read by draw callbacks
 
     VuiDraw draw;
-    void *userdata;
+    VuiOnEvent on_event;
+    void *userdata; // free for the app to use
+
+    int focusable;  // reachable with Tab and by clicking
+    int focused;    // set by vui_set_focus(), read it in draw callbacks
 
     // internal -- use node_add()/node_remove(), don't touch directly
     VuiNode *parent;
@@ -226,6 +239,9 @@ struct VuiNode {
 };
 
 VuiNode *node_create(void);
+// For custom nodes: embed VuiNode as the first member of your struct
+// and allocate with node_alloc(sizeof(MyNode)); node_destroy() frees it.
+VuiNode *node_alloc(size_t size);
 void node_destroy(VuiNode *node); // frees the whole subtree
 
 void node_add(VuiNode *parent, VuiNode *child);
@@ -233,6 +249,20 @@ void node_remove(VuiNode *child);
 
 void node_layout(VuiNode *root, VuiRect available);
 void node_draw(VuiNode *node, VuiScreen *scr);
+
+// -- Focus and event routing --
+//
+// vui_render() lays out `root` over the whole terminal and draws it.
+// vui_dispatch() routes one event: Tab/Shift-Tab move focus, a left
+// click focuses the focusable node under the pointer, keys/text/paste go
+// to the focused node, mouse events to the node under the pointer.
+// Each is offered to on_event() up the parent chain until one returns 1.
+// Returns 1 if some node handled it.
+
+void vui_render(VuiCtx *ui, VuiNode *root);
+int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event);
+void vui_set_focus(VuiCtx *ui, VuiNode *node);
+VuiNode *vui_focus(VuiCtx *ui);
 
 // -- Controls --
 //

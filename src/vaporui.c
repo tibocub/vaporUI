@@ -5,6 +5,7 @@
 struct VuiCtx {
     VuiSize size;
     VuiScreen *screen;
+    VuiNode *focus;
 };
 
 int vui_platform_init(void);
@@ -23,7 +24,7 @@ VuiCtx *vui_init(void)
         return NULL;
     }
 
-    ui = malloc(sizeof(*ui));
+    ui = calloc(1, sizeof(*ui));
 
     if (ui == NULL) {
         vui_platform_shutdown();
@@ -103,4 +104,14 @@ void vui_set_mouse(VuiCtx *ui, int enable)
 {
     (void)ui;
     vui_platform_set_mouse(enable);
+}
+
+VuiNode *vui_ctx_focus(VuiCtx *ui)
+{
+    return ui->focus;
+}
+
+void vui_ctx_set_focus(VuiCtx *ui, VuiNode *node)
+{
+    ui->focus = node;
 }
