@@ -62,9 +62,8 @@ static const char *key_name(const VuiKeyEvent *event, char *buf, size_t bufsize)
         (m & VUI_MOD_SHIFT) ? "Shift-" : "",
         event->key == VUI_KEY_CHAR ? "" : base_name(event));
 
-    if (event->key == VUI_KEY_CHAR && n > 0 && (size_t)n + 1 < bufsize) {
-        buf[n] = (char)event->character;
-        buf[n + 1] = 0;
+    if (event->key == VUI_KEY_CHAR && n > 0 && (size_t)n + 5 < bufsize) {
+        buf[n + vui_utf8_encode(event->character, (uint8_t *)buf + n)] = 0;
     }
 
     return buf;

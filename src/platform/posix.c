@@ -64,9 +64,10 @@ int vui_platform_init(void)
 
     vui_input_reset(&input_decoder);
 
-    // kitty keyboard protocol, 'disambiguate' level: lets terminals that
-    // support it report Ctrl/Alt/Shift on any key. Others ignore it.
-    fputs("\033[>1u\033[?2004h", stdout); // + bracketed paste
+    // kitty keyboard protocol ('disambiguate') and xterm modifyOtherKeys
+    // level 1: let terminals that support either report Ctrl/Alt/Shift on
+    // any key. Others ignore them.
+    fputs("\033[>1u\033[>4;1m\033[?2004h", stdout); // + xterm modifyOtherKeys 1, bracketed paste
     fflush(stdout);
 
     return 0; 
@@ -74,7 +75,7 @@ int vui_platform_init(void)
 
 void vui_platform_shutdown(void)
 {
-    fputs("\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[<u", stdout);
+    fputs("\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[>4;0m\033[<u", stdout);
     fflush(stdout);
 
     tcsetattr(

@@ -25,6 +25,23 @@ static VuiVtResult done(VuiEvent *event, VuiKey key, int mod)
     return VUI_VT_COMPLETE;
 }
 
+// Shared by the kitty (CSI code;mod u) and xterm modifyOtherKeys
+// (CSI 27;mod;code ~) forms.
+static VuiVtResult other_key(VuiEvent *event, int code, int mod)
+{
+    switch (code) {
+    case 0:   return VUI_VT_INVALID;
+    case 9:   return done(event, VUI_KEY_TAB, mod);
+    case 13:  return done(event, VUI_KEY_ENTER, mod);
+    case 27:  return done(event, VUI_KEY_ESCAPE, mod);
+    case 127: return done(event, VUI_KEY_BACKSPACE, mod);
+    default:
+        done(event, VUI_KEY_CHAR, mod);
+        event->key.character = code;
+        return VUI_VT_COMPLETE;
+    }
+}
+
 static VuiVtResult marker(VuiEvent *event, VuiEventType type)
 {
     event->type = type;
@@ -112,6 +129,7 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
         switch (decoder->param[0]) {
         case 1: case 7: return done(event, VUI_KEY_HOME, mod);
         case 2:         return done(event, VUI_KEY_INSERT, mod);
+        case 27:        return other_key(event, decoder->param[2], mod);
         case 200:       return marker(event, VUI_EVENT_PASTE_START);
         case 201:       return marker(event, VUI_EVENT_PASTE_END);
         case 3:         return done(event, VUI_KEY_DELETE, mod);
@@ -127,18 +145,7 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
         default:        return VUI_VT_INVALID;
         }
 
-    case 'u':
-        switch (decoder->param[0]) {
-        case 9:   return done(event, VUI_KEY_TAB, mod);
-        case 13:  return done(event, VUI_KEY_ENTER, mod);
-        case 27:  return done(event, VUI_KEY_ESCAPE, mod);
-        case 127: return done(event, VUI_KEY_BACKSPACE, mod);
-        case 0:   return VUI_VT_INVALID;
-        default:
-            done(event, VUI_KEY_CHAR, mod);
-            event->key.character = decoder->param[0];
-            return VUI_VT_COMPLETE;
-        }
+    case 'u': return other_key(event, decoder->param[0], mod);
 
     default:
         return VUI_VT_INVALID;

@@ -28,5 +28,5 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     exe = a[0]; i = a.index("--") if "--" in a else len(a)
     rows, cols = (int(a[1]), int(a[2])) if i == 3 else (24, 80)
-    keys = [codecs.decode(k, "unicode_escape").encode("latin-1") for k in a[i+1:]]
+    keys = [codecs.escape_decode(k.encode())[0] for k in a[i+1:]]
     print("\n".join(run(exe, keys, rows, cols)))

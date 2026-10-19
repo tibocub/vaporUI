@@ -28,5 +28,11 @@ int main(void){
    for(;*in;in++){VuiEvent x=vui_input_feed(&d,(uint8_t)*in);if(x.type)ev[n++]=x;}
    assert(n==9&&ev[0].type==VUI_EVENT_PASTE_START&&ev[1].text.codepoint=='a'&&ev[2].text.codepoint=='\n'&&ev[3].text.codepoint=='\t'
      &&ev[5].text.codepoint==0xe9&&ev[6].type==VUI_EVENT_TEXT&&ev[6].text.codepoint==3&&ev[7].type==VUI_EVENT_PASTE_END&&ev[8].text.codepoint=='z'); }
+ e=run("\x1b[27;5;233~"); assert(e.key.character==0xe9&&e.key.modifiers==VUI_MOD_CTRL);
+ e=run("\x1b[27;6;36~"); assert(e.key.character=='$'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT));
+ e=run("\x1b[27;5;13~"); assert(e.key.key==VUI_KEY_ENTER&&e.key.modifiers==VUI_MOD_CTRL);
+ e=run("\x1b[233;5u"); assert(e.key.character==0xe9&&e.key.modifiers==VUI_MOD_CTRL);
+ e=run("\xc3\xa9"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint==0xe9);
+ e=run("\xe2\x82\xac"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint==0x20ac);
  puts("input decoder: ok");
  return 0;}
