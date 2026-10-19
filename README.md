@@ -1,5 +1,5 @@
 # vaporUI
-A simple ncurses alternative for vaporOS.
+A simple and cross-platform ncurses alternative made for [vaporOS](https://github.com/tibocub/vaporOS).
 
 Aims to be easier than ncurses and expose a
 C ABI to be used from other languages such

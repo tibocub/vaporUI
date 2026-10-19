@@ -40,6 +40,14 @@ shortcut that is the "Ctrl-2" of a QWERTY board is `Ctrl-é` on AZERTY, and it i
 supports tier 2 or 3*. Bind it with `ctl_bind(c, VUI_KEY_CHAR, VUI_MOD_CTRL, 0xE9, ...)`.
 On Windows, AltGr is reported by Windows as Ctrl+Alt; not tested yet.
 
+### Terminal shortcuts
+
+vaporUI runs on the alternate screen (like vim, less, htop), so terminals that bind Shift+PageUp/Down,
+Shift+Home/End etc. to scrollback usually leave them to the app. A terminal's own *application*
+shortcuts (copy/paste, new tab, font size, user-configured bindings) are handled before the program
+ever sees the key, and no escape sequence can override that: change the terminal's config. A vaporOS
+terminal we write ourselves can simply not bind them.
+
 ### Known quirks
 
 - Raw mode clears `ISIG`, `IXON` and `IEXTEN`: Ctrl-C/Z/\\ , Ctrl-S/Q and Ctrl-V reach the app as ordinary Ctrl keys (nothing is swallowed by the tty). Terminals themselves still keep Ctrl-Shift-C/V for their own copy/paste.
