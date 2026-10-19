@@ -45,8 +45,9 @@ Controls:
 - [x] flat key -> action binding table (ctl_create/ctl_bind/ctl_dispatch)
 - [x] Ctrl+<letter> decodes generally now, not just Ctrl-C (VUI_KEY_CHAR + VuiKeyEvent.character)
 - [ ] per-node/focus-scoped controls (needs a real focusable widget first -- see widgets below)
+- [x] F1-F12, Insert (CSI n~ and SS3)
 - [x] Alt (ESC prefix), Shift+Tab, xterm modified arrows/nav (CSI 1;m X), SS3 arrows, kitty CSI-u (any key + any modifier; enabled at init)
-- [ ] Ctrl+symbol/digit and Shift on non-letters only work on kitty-protocol terminals (no xterm modifyOtherKeys, no F-keys, no mouse yet)
+- [ ] Ctrl+symbol/digit and Shift on non-letters only work on kitty-protocol terminals (no xterm modifyOtherKeys, no mouse yet)
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution

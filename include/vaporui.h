@@ -46,6 +46,11 @@ typedef enum {
     VUI_KEY_END,
     VUI_KEY_PAGE_UP,
     VUI_KEY_PAGE_DOWN,
+    VUI_KEY_INSERT,
+
+    VUI_KEY_F1, // F2..F12 follow contiguously: VUI_KEY_F1 + n - 1
+    VUI_KEY_F2, VUI_KEY_F3, VUI_KEY_F4, VUI_KEY_F5, VUI_KEY_F6,
+    VUI_KEY_F7, VUI_KEY_F8, VUI_KEY_F9, VUI_KEY_F10, VUI_KEY_F11, VUI_KEY_F12,
 } VuiKey;
 
 typedef struct {

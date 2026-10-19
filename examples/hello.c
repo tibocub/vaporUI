@@ -26,7 +26,14 @@ static const char *base_name(const VuiKeyEvent *event)
     case VUI_KEY_END:       return "End";
     case VUI_KEY_PAGE_UP:   return "Page Up";
     case VUI_KEY_PAGE_DOWN: return "Page Down";
-    default:                return "?";
+    case VUI_KEY_INSERT:    return "Insert";
+    default:
+        if (event->key >= VUI_KEY_F1 && event->key <= VUI_KEY_F12) {
+            static char f[4];
+            snprintf(f, sizeof f, "F%d", event->key - VUI_KEY_F1 + 1);
+            return f;
+        }
+        return "?";
     }
 }
 
