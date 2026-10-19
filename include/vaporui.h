@@ -176,6 +176,11 @@ void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height);
 unsigned int scr_width(VuiScreen *scr);
 unsigned int scr_height(VuiScreen *scr);
 
+// Columns a character / string occupies: 0 (control, combining), 1, or 2 (CJK, emoji).
+// scr_set / scr_puts handle wide characters: a wide cell takes two columns.
+int vui_cp_width(VuiCodepoint cp);
+unsigned int vui_str_width(const char *utf8);
+
 void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style);
 void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *utf8, VuiStyle style);
 void scr_clear(VuiScreen *scr, VuiStyle style);

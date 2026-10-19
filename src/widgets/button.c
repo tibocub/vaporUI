@@ -1,4 +1,3 @@
-#include <string.h>
 
 #include "../../include/vaporui.h"
 
@@ -7,7 +6,7 @@ static void button_draw(VuiNode *node, VuiScreen *scr, void *userdata)
     VuiButton *b = (VuiButton *)node;
     VuiRect r = node->rect;
     VuiStyle style = { .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLACK };
-    unsigned int len = (unsigned int)strlen(b->label) + 4; // "[ " + label + " ]" (ASCII labels)
+    unsigned int len = vui_str_width(b->label) + 4; // "[ " + label + " ]"
     unsigned int x = r.x + (r.width > len ? (r.width - len) / 2 : 0);
 
     (void)userdata;

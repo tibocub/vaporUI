@@ -12,6 +12,9 @@ struct VuiScreen {
     VuiRect clip;
 };
 
+// Second half of a double-width character; never written to the terminal.
+#define CONT_CELL 0xFFFFFFFEu
+
 static VuiCell blank_cell(void)
 {
     return (VuiCell){ .codepoint = ' ', .style = {0} };
@@ -111,16 +114,48 @@ unsigned int scr_height(VuiScreen *scr)
     return scr->height;
 }
 
-void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style)
+static int in_clip(const VuiScreen *scr, unsigned int x, unsigned int y)
 {
     VuiRect c = scr->clip;
 
-    if (x >= scr->width || y >= scr->height || x < c.x || y < c.y
-        || x - c.x >= c.width || y - c.y >= c.height) {
+    return x < scr->width && y < scr->height && x >= c.x && y >= c.y
+        && x - c.x < c.width && y - c.y < c.height;
+}
+
+// Overwriting half of a wide character must not leave the other half behind.
+static void unglue(VuiScreen *scr, unsigned int x, unsigned int y)
+{
+    VuiCell *row = &scr->back[y * scr->width];
+
+    if (row[x].codepoint == CONT_CELL && x > 0) {
+        row[x - 1].codepoint = ' ';
+    } else if (x + 1 < scr->width && row[x + 1].codepoint == CONT_CELL) {
+        row[x + 1].codepoint = ' ';
+    }
+}
+
+void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style)
+{
+    int w = vui_cp_width(cp);
+
+    if (w == 0 || !in_clip(scr, x, y)) {
         return;
     }
 
-    scr->back[y * scr->width + x] = (VuiCell){ .codepoint = cp, .style = style };
+    if (w == 2 && !in_clip(scr, x + 1, y)) {
+        cp = ' '; // half a wide character can't be shown
+        w = 1;
+    }
+
+    VuiCell *row = &scr->back[y * scr->width];
+
+    unglue(scr, x, y);
+    row[x] = (VuiCell){ .codepoint = cp, .style = style };
+
+    if (w == 2) {
+        unglue(scr, x + 1, y);
+        row[x + 1] = (VuiCell){ .codepoint = CONT_CELL, .style = style };
+    }
 }
 
 void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *str, VuiStyle style)
@@ -135,7 +170,8 @@ void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *str, V
         uint32_t cp;
 
         if (vui_utf8_feed(&decoder, (uint8_t)*str++, &cp) == VUI_UTF8_COMPLETE) {
-            scr_set(scr, x++, y, cp, style);
+            scr_set(scr, x, y, cp, style);
+            x += vui_cp_width(cp);
         }
     }
 }
@@ -184,14 +220,17 @@ void scr_flush(VuiScreen *scr)
     int cur_x = -1;
     int cur_y = -1;
 
-    fputs("\033[?25l", stdout); // hide cursor -- avoid it jumping around mid-redraw
-
     for (unsigned int y = 0; y < scr->height; y++) {
         for (unsigned int x = 0; x < scr->width; x++) {
             VuiCell *back = &scr->back[y * scr->width + x];
             VuiCell *front = &scr->front[y * scr->width + x];
 
             if (back->codepoint == front->codepoint && style_eq(back->style, front->style)) {
+                continue;
+            }
+
+            if (back->codepoint == CONT_CELL) {
+                *front = *back; // the wide character before it already covered this cell
                 continue;
             }
 
@@ -214,11 +253,10 @@ void scr_flush(VuiScreen *scr)
             fwrite(utf8, 1, len, stdout);
 
             *front = *back;
-            cur_x = x + 1;
+            cur_x = x + (back->codepoint != CONT_CELL && x + 1 < scr->width && back[1].codepoint == CONT_CELL ? 2 : 1);
             cur_y = y;
         }
     }
 
-    fputs("\033[?25h", stdout);
     fflush(stdout);
 }

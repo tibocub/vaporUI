@@ -143,3 +143,43 @@ size_t vui_cps_to_utf8(const uint32_t *cps, unsigned int n, char *out, size_t si
 
     return used;
 }
+
+// Terminal cell width: 0 for control and combining characters, 2 for East Asian
+// wide / fullwidth and emoji blocks, 1 otherwise. A compact table, not full wcwidth().
+int vui_cp_width(uint32_t cp)
+{
+    if (cp < 32 || (cp >= 0x7F && cp < 0xA0)) return 0;
+    if (cp < 0x300) return 1;
+
+    if ((cp >= 0x300 && cp <= 0x36F) || (cp >= 0x200B && cp <= 0x200F) ||
+        (cp >= 0x20D0 && cp <= 0x20FF) || (cp >= 0xFE00 && cp <= 0xFE0F) || cp == 0xFEFF) {
+        return 0;
+    }
+
+    if ((cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x2E80 && cp <= 0xA4CF && cp != 0x303F) ||
+        (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+        (cp >= 0xFE30 && cp <= 0xFE6F) || (cp >= 0xFF00 && cp <= 0xFF60) ||
+        (cp >= 0xFFE0 && cp <= 0xFFE6) || (cp >= 0x1F300 && cp <= 0x1F64F) ||
+        (cp >= 0x1F900 && cp <= 0x1F9FF) || (cp >= 0x20000 && cp <= 0x3FFFD)) {
+        return 2;
+    }
+
+    return 1;
+}
+
+unsigned int vui_str_width(const char *str)
+{
+    VuiUtf8Decoder d;
+    uint32_t cp;
+    unsigned int w = 0;
+
+    vui_utf8_reset(&d);
+
+    for (; *str != '\0'; str++) {
+        if (vui_utf8_feed(&d, (uint8_t)*str, &cp) == VUI_UTF8_COMPLETE) {
+            w += vui_cp_width(cp);
+        }
+    }
+
+    return w;
+}
