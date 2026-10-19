@@ -15,6 +15,8 @@ static void checklist_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 
         if (i == l->cursor) {
             style.attr = node->focused ? VUI_ATTR_REVERSE : VUI_ATTR_BOLD;
+        } else if (node->hovered && i == l->hover_row) {
+            style = (VuiStyle){ .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLUE };
         }
 
         scr_fill(scr, (VuiRect){ r.x, r.y + row, r.width, 1 }, ' ', style);
@@ -58,6 +60,10 @@ static int checklist_event(VuiNode *node, VuiCtx *ui, const VuiEvent *event)
 
     if (l->count == 0) {
         return 0;
+    }
+
+    if (event->type == VUI_EVENT_MOUSE) {
+        l->hover_row = l->top + (event->mouse.y - node->rect.y);
     }
 
     if (event->type == VUI_EVENT_KEY && event->key.modifiers == VUI_MOD_NONE) {

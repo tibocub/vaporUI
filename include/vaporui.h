@@ -114,10 +114,11 @@ void vui_flush(VuiCtx *ui);
 VuiEvent vui_poll_event(VuiCtx *ui);
 
 // Opt-in: reporting mouse input disables the terminal's own text
-// selection. Uses xterm SGR (1006) reporting, so anything that speaks
+// selection. level 1: clicks, drag, wheel. level 2: also plain motion,
+// needed for node->hovered. 0 turns it off. Uses xterm SGR (1006) reporting, so anything that speaks
 // that protocol (every modern terminal, or a vaporOS terminal / GPM
 // shim that emits it) works without a backend change.
-void vui_set_mouse(VuiCtx *ui, int enable);
+void vui_set_mouse(VuiCtx *ui, int level);
 
 typedef struct {
     unsigned int x;
@@ -229,7 +230,9 @@ struct VuiNode {
     void *userdata; // free for the app to use
 
     int focusable;  // reachable with Tab and by clicking
+    int wants_tab;  // when focused, offer Tab to on_event() before moving focus
     int focused;    // set by vui_set_focus(), read it in draw callbacks
+    int hovered;    // pointer is over this node or a descendant (needs vui_set_mouse(ui, 2))
 
     // internal -- use node_add()/node_remove(), don't touch directly
     VuiNode *parent;
@@ -340,6 +343,7 @@ typedef struct {
     unsigned int count;
     unsigned int cursor;
     unsigned int top;  // first visible row
+    unsigned int hover_row; // item under the pointer, when node.hovered
     int radio;
     void (*on_change)(VuiNode *list, unsigned int index);
     unsigned char checked[]; // one flag per item

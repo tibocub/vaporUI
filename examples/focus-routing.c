@@ -102,7 +102,7 @@ int main(void)
         return 1;
     }
 
-    vui_set_mouse(ui, 1);
+    vui_set_mouse(ui, 2);
 
     VuiControls *global = ctl_create();
     ctl_bind(global, VUI_KEY_CHAR, VUI_MOD_CTRL, 'c', act_quit, &running);

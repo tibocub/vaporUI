@@ -1,16 +1,13 @@
-#include "../include/vaporui.h"
-
-VuiNode *vui_ctx_focus(VuiCtx *ui);
-void vui_ctx_set_focus(VuiCtx *ui, VuiNode *node);
+#include "ctx.h"
 
 VuiNode *vui_focus(VuiCtx *ui)
 {
-    return vui_ctx_focus(ui);
+    return ui->focus;
 }
 
 void vui_set_focus(VuiCtx *ui, VuiNode *node)
 {
-    VuiNode *old = vui_ctx_focus(ui);
+    VuiNode *old = ui->focus;
 
     if (old != NULL) {
         old->focused = 0;
@@ -20,7 +17,7 @@ void vui_set_focus(VuiCtx *ui, VuiNode *node)
         node->focused = 1;
     }
 
-    vui_ctx_set_focus(ui, node);
+    ui->focus = node;
 }
 
 void vui_render(VuiCtx *ui, VuiNode *root)
@@ -100,18 +97,48 @@ static int in_tree(VuiNode *root, VuiNode *n)
     return 0;
 }
 
+static void set_hover(VuiCtx *ui, VuiNode *root, VuiNode *hit)
+{
+    if (ui->hover != NULL && in_tree(root, ui->hover)) {
+        for (VuiNode *n = ui->hover; n != NULL; n = n->parent) {
+            n->hovered = 0;
+        }
+    }
+
+    ui->hover = hit;
+
+    for (VuiNode *n = hit; n != NULL; n = n->parent) {
+        n->hovered = 1;
+    }
+}
+
+static int bubble(VuiNode *target, VuiCtx *ui, const VuiEvent *event)
+{
+    for (; target != NULL; target = target->parent) {
+        if (target->on_event != NULL && target->on_event(target, ui, event)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
 {
     VuiNode *target;
 
     // The focused node may have been destroyed or removed since last time.
-    if (vui_focus(ui) != NULL && !in_tree(root, vui_focus(ui))) {
-        vui_set_focus(ui, NULL);
+    if (ui->focus != NULL && !in_tree(root, ui->focus)) {
+        ui->focus = NULL; // not via vui_set_focus(): the old node may be freed
     }
 
     switch (event->type) {
     case VUI_EVENT_KEY:
         if (event->key.key == VUI_KEY_TAB && (event->key.modifiers & ~VUI_MOD_SHIFT) == 0) {
+            if (vui_focus(ui) != NULL && vui_focus(ui)->wants_tab && bubble(vui_focus(ui), ui, event)) {
+                return 1;
+            }
+
             move_focus(ui, root, event->key.modifiers & VUI_MOD_SHIFT);
             return 1;
         }
@@ -126,6 +153,7 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
 
     case VUI_EVENT_MOUSE:
         target = node_at(root, event->mouse.x, event->mouse.y);
+        set_hover(ui, root, target);
 
         if (event->mouse.action == VUI_MOUSE_PRESS && event->mouse.button == VUI_MOUSE_LEFT) {
             VuiNode *f = target;
@@ -144,11 +172,5 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
         return 0;
     }
 
-    for (; target != NULL; target = target->parent) {
-        if (target->on_event != NULL && target->on_event(target, ui, event)) {
-            return 1;
-        }
-    }
-
-    return 0;
+    return bubble(target, ui, event);
 }

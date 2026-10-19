@@ -1,12 +1,7 @@
 #include <stdlib.h>
 
-#include "../include/vaporui.h"
+#include "ctx.h"
 
-struct VuiCtx {
-    VuiSize size;
-    VuiScreen *screen;
-    VuiNode *focus;
-};
 
 int vui_platform_init(void);
 void vui_platform_shutdown(void);
@@ -14,7 +9,7 @@ void vui_platform_shutdown(void);
 int vui_platform_get_size(VuiSize *size);
 void vui_platform_clear(void);
 VuiEvent vui_platform_poll_event(void);
-void vui_platform_set_mouse(int enable);
+void vui_platform_set_mouse(int level);
 
 VuiCtx *vui_init(void)
 {
@@ -100,18 +95,8 @@ VuiEvent vui_poll_event(VuiCtx *ui)
     return event;
 }
 
-void vui_set_mouse(VuiCtx *ui, int enable)
+void vui_set_mouse(VuiCtx *ui, int level)
 {
     (void)ui;
-    vui_platform_set_mouse(enable);
-}
-
-VuiNode *vui_ctx_focus(VuiCtx *ui)
-{
-    return ui->focus;
-}
-
-void vui_ctx_set_focus(VuiCtx *ui, VuiNode *node)
-{
-    ui->focus = node;
+    vui_platform_set_mouse(level);
 }

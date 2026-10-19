@@ -6,11 +6,20 @@ static void button_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiButton *b = (VuiButton *)node;
     VuiRect r = node->rect;
-    VuiStyle style = { .attr = node->focused ? VUI_ATTR_REVERSE | VUI_ATTR_BOLD : VUI_ATTR_NONE };
+    VuiStyle style = { .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLACK };
     unsigned int len = (unsigned int)strlen(b->label) + 4; // "[ " + label + " ]" (ASCII labels)
     unsigned int x = r.x + (r.width > len ? (r.width - len) / 2 : 0);
 
     (void)userdata;
+
+    // the whole rect is clickable, so the whole rect shows the state
+    if (node->focused) {
+        style = (VuiStyle){ .attr = VUI_ATTR_REVERSE | VUI_ATTR_BOLD };
+    } else if (node->hovered) {
+        style = (VuiStyle){ .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLUE, .attr = VUI_ATTR_BOLD };
+    }
+
+    scr_fill(scr, r, ' ', style);
     scr_puts(scr, x, r.y + r.height / 2, "[ ", style);
     scr_puts(scr, x + 2, r.y + r.height / 2, b->label, style);
     scr_puts(scr, x + len - 2, r.y + r.height / 2, " ]", style);

@@ -74,7 +74,7 @@ int vui_platform_init(void)
 
 void vui_platform_shutdown(void)
 {
-    fputs("\033[?1006l\033[?1002l\033[?1000l\033[?2004l\033[<u", stdout);
+    fputs("\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[<u", stdout);
     fflush(stdout);
 
     tcsetattr(
@@ -84,10 +84,15 @@ void vui_platform_shutdown(void)
     );
 }
 
-void vui_platform_set_mouse(int enable)
+void vui_platform_set_mouse(int level)
 {
-    // 1000 clicks + wheel, 1002 drag motion, 1006 SGR encoding (no 223 col limit)
-    fputs(enable ? "\033[?1000h\033[?1002h\033[?1006h" : "\033[?1006l\033[?1002l\033[?1000l", stdout);
+    // 1000 clicks+wheel, 1002 drag motion, 1003 all motion, 1006 SGR encoding (no 223 col limit)
+    fputs("\033[?1003l\033[?1002l\033[?1000l", stdout);
+
+    if (level > 0) {
+        fputs(level > 1 ? "\033[?1003h\033[?1006h" : "\033[?1002h\033[?1000h\033[?1006h", stdout);
+    }
+
     fflush(stdout);
 }
 

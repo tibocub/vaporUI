@@ -7,6 +7,8 @@
 //   - the checklist has more items than rows: it scrolls to follow the cursor
 //   - "Add" bumps the counter, "Reset" zeroes it (Enter, Space or click)
 //   - the status line reports the last change
+//   - hovering a button or a list row highlights it (blue); the whole button
+//     rect is filled, so what lights up is what a click activates
 //   - "Quit" or Ctrl-C exits
 
 #include <stdio.h>
@@ -91,7 +93,7 @@ int main(void)
         return 1;
     }
 
-    vui_set_mouse(ui, 1);
+    vui_set_mouse(ui, 2);
 
     VuiControls *global = ctl_create();
     ctl_bind(global, VUI_KEY_CHAR, VUI_MOD_CTRL, 'c', act_quit, &app);
