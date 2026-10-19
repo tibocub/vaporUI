@@ -351,4 +351,25 @@ typedef struct {
 
 VuiChecklist *checklist_create(const char **items, unsigned int count, int radio);
 
+// Single-line text field with a fixed capacity (in characters). Handles
+// typing, paste, Backspace/Delete, Left/Right/Home/End, Ctrl-A/E (line
+// ends), Ctrl/Alt+Left/Right (words), Ctrl-W / Ctrl-Backspace (delete
+// word back), Ctrl-U / Ctrl-K (delete to start / end), and click to
+// place the cursor. Enter calls on_submit. Scrolls sideways when the
+// text is wider than the node.
+typedef struct {
+    VuiNode node;
+    unsigned int len, cap;
+    unsigned int cursor;
+    unsigned int left; // first visible character
+    void (*on_change)(VuiNode *input);
+    void (*on_submit)(VuiNode *input);
+    VuiCodepoint text[]; // cap entries
+} VuiInput;
+
+VuiInput *input_create(unsigned int max_chars);
+void input_set_text(VuiInput *input, const char *utf8);
+// Copies the text as NUL-terminated UTF-8, truncated to fit; returns its length in bytes.
+size_t input_get_text(const VuiInput *input, char *out, size_t size);
+
 #endif
