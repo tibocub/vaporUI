@@ -216,6 +216,20 @@ int main(void)
     textarea_get_text(sa, out, sizeof out);
     assert(!strcmp(out, "abc\ndef!"));
 
+    // Shift + Home/End/PageUp/PageDown select too
+    sn->rect = (VuiRect){ 0, 0, 20, 3 };
+    textarea_set_text(sa, "l1\nl2\nl3\nl4\nl5\nl6");
+    key(sn, VUI_KEY_END, VUI_MOD_SHIFT, 0);
+    assert(sa->cursor == 2 && sa->anchor == 0);
+    key(sn, VUI_KEY_HOME, VUI_MOD_SHIFT, 0);
+    assert(sa->cursor == 0 && sa->anchor == 0);
+    key(sn, VUI_KEY_PAGE_DOWN, VUI_MOD_SHIFT, 0);
+    assert(sa->anchor == 0 && sa->cursor == 6);   // 2 rows down (height 3 - 1)
+    key(sn, VUI_KEY_PAGE_UP, VUI_MOD_SHIFT, 0);
+    assert(sa->anchor == 0 && sa->cursor == 0);
+    key(sn, VUI_KEY_END, VUI_MOD_CTRL | VUI_MOD_SHIFT, 0);
+    assert(sa->anchor == 0 && sa->cursor == sa->len);
+
     // auto-indent
     sa->auto_indent = 1;
     textarea_set_text(sa, "    foo");

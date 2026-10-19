@@ -34,5 +34,10 @@ int main(void){
  e=run("\x1b[233;5u"); assert(e.key.character==0xe9&&e.key.modifiers==VUI_MOD_CTRL);
  e=run("\xc3\xa9"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint==0xe9);
  e=run("\xe2\x82\xac"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint==0x20ac);
+ e=run("\x1b[1;2H"); assert(e.key.key==VUI_KEY_HOME&&e.key.modifiers==VUI_MOD_SHIFT);
+ e=run("\x1b[1;2F"); assert(e.key.key==VUI_KEY_END&&e.key.modifiers==VUI_MOD_SHIFT);
+ e=run("\x1b[5;2~"); assert(e.key.key==VUI_KEY_PAGE_UP&&e.key.modifiers==VUI_MOD_SHIFT);
+ e=run("\x1b[6;2~"); assert(e.key.key==VUI_KEY_PAGE_DOWN&&e.key.modifiers==VUI_MOD_SHIFT);
+ e=run("\x1b[1;6F"); assert(e.key.modifiers==(VUI_MOD_SHIFT|VUI_MOD_CTRL));
  puts("input decoder: ok");
  return 0;}
