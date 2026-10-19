@@ -12,6 +12,12 @@ banckend to compile GUI out of the same code of
 a TUI program and vice-versa (once the TUI part
 is stable).
 
+## Docs
+- `docs/overview.md`: how an app is built, the pipeline, file map, custom nodes, testing
+- `docs/input.md`: events, what terminals can send, AZERTY/non-QWERTY notes, mouse
+- `docs/widgets.md`: widget reference and conventions for adding one
+- `docs/limitations.md`: everything that doesn't work yet, in one place
+
 ## Examples and tests
 `make` builds every `examples/*.c` into `build/`. They are both the
 how-to for building UIs with vaporUI and the manual regression suite:
@@ -23,7 +29,8 @@ example (or extend one).
 - `layout-resize`: nested flexbox panes, live resize
 - `focus-routing`: custom nodes, focus, event bubbling
 - `borders`: border and div containers
-- `buttons-and-lists`: button, checklist, radio list
+- `buttons-and-lists`: button, checklist, radio list, hover
+- `text-input`: single-line input fields
 
 `make test` runs the automated checks (`tests/`): the input decoder.
 `tests/screen.py build/<example> ROWS COLS -- '\t' 'text' ...` runs an example in a pty, sends keys/mouse
@@ -64,9 +71,9 @@ Controls:
 - [x] focus (Tab/Shift-Tab/click) and per-node `on_event` with bubbling to parents (`vui_dispatch`)
 - [x] F1-F12, Insert (CSI n~ and SS3)
 - [x] Alt (ESC prefix), Shift+Tab, xterm modified arrows/nav (CSI 1;m X), SS3 arrows, kitty CSI-u (any key + any modifier; enabled at init)
-- [x] mouse (xterm SGR 1006: press/release/drag/wheel + modifiers; opt-in via vui_set_mouse)
+- [x] mouse (xterm SGR 1006: press/release/drag/wheel/hover + modifiers; opt-in via vui_set_mouse)
 - [x] bracketed paste (PASTE_START, TEXT..., PASTE_END -- streamed, no buffer)
-- [ ] Ctrl+symbol/digit and Shift on non-letters only work on kitty-protocol terminals (no xterm modifyOtherKeys, no mouse yet)
+- [x] xterm modifyOtherKeys + kitty protocol (Ctrl+accent/symbol on AZERTY etc.); legacy terminals can't send these, see docs/input.md
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution
@@ -83,6 +90,7 @@ VaporUI widgets:
 - [x] push button
 - [x] radio button
 - [x] check-list
-- [ ] text area
+- [x] text input (single line)
+- [ ] text area (multi-line)
 - [ ] form
 - [ ] tree
