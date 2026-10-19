@@ -31,7 +31,8 @@ example (or extend one).
 - `borders`: border and div containers
 - `buttons-and-lists`: button, checklist, radio list, hover
 - `text-input`: single-line input fields
-- `text-area`: multi-line editor
+- `text-area`: multi-line editor (selection, clipboard, wrap, undo)
+- `auto-sizing`: content-based sizing, labels
 
 `make test` runs the automated checks (`tests/`): the input decoder.
 `tests/screen.py build/<example> ROWS COLS -- '\t' 'text' ...` runs an example in a pty, sends keys/mouse
@@ -53,7 +54,7 @@ VaporUI API:
 Rendering:
 - [x] cell buffer (double-buffered, diffed against what's on screen)
 - [x] basic styling (8 ANSI colors, bold/underline/reverse)
-- [ ] wide/double-width character support
+- [x] wide/double-width character support (CJK, emoji table)
 - [ ] 256-color / truecolor
 
 Layout:
@@ -62,7 +63,7 @@ Layout:
 - [x] wired to the renderer (node_draw walks the tree, draw callbacks get their node's computed rect)
 - [ ] cross-axis alignment (currently stretch-only, no start/center/end)
 - [ ] justify-content variants (currently packed-from-start + gap only)
-- [ ] content-based sizing (basis is always explicit -- no text measurement yet)
+- [x] content-based sizing (`VUI_AUTO`, per-node `measure`; main axis only)
 - [ ] per-side padding (currently uniform only)
 - [x] draw callbacks are clipped to their node's rect
 
@@ -92,6 +93,7 @@ VaporUI widgets:
 - [x] radio button
 - [x] check-list
 - [x] text input (single line)
-- [x] text area (multi-line; no wrapping/selection/undo yet)
+- [x] text area (multi-line: selection, clipboard, wrap, undo/redo, auto-indent, wide chars)
+- [x] label
 - [ ] form
 - [ ] tree

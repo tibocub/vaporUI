@@ -84,6 +84,29 @@ static unsigned int sub(unsigned int a, unsigned int b)
     return a > b ? a - b : 0;
 }
 
+unsigned int node_measure(VuiNode *node, int row)
+{
+    unsigned int pad2 = node->padding * 2, total = 0;
+    int along = (node->direction == VUI_DIR_ROW) == (row != 0);
+
+    if (node->measure != NULL) {
+        return node->measure(node, row) + pad2;
+    }
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        VuiNode *c = node->children[i];
+        unsigned int size = c->basis == VUI_AUTO ? node_measure(c, row) : c->basis;
+
+        total = along ? total + size : (size > total ? size : total);
+    }
+
+    if (along && node->child_count > 1) {
+        total += node->gap * (node->child_count - 1);
+    }
+
+    return total + pad2;
+}
+
 void node_layout(VuiNode *node, VuiRect rect)
 {
     node->rect = rect;
@@ -109,31 +132,35 @@ void node_layout(VuiNode *node, VuiRect rect)
     float grow_sum = 0;
     float shrink_basis_sum = 0; // CSS weighs shrink by shrink*basis, not shrink alone
 
-    for (unsigned int i = 0; i < node->child_count; i++) {
-        VuiNode *c = node->children[i];
-        basis_sum += c->basis;
-        grow_sum += c->grow;
-        shrink_basis_sum += c->shrink * (float)c->basis;
-    }
-
-    int diff = (int)avail - (int)basis_sum;
-
-    unsigned int *sizes = malloc(node->child_count * sizeof(unsigned int));
+    unsigned int *sizes = malloc(node->child_count * 2 * sizeof(unsigned int));
+    unsigned int *bases;
 
     if (sizes == NULL) {
         return;
     }
 
+    bases = sizes + node->child_count;
+
+    for (unsigned int i = 0; i < node->child_count; i++) {
+        VuiNode *c = node->children[i];
+        bases[i] = c->basis == VUI_AUTO ? node_measure(c, row) : c->basis;
+        basis_sum += bases[i];
+        grow_sum += c->grow;
+        shrink_basis_sum += c->shrink * (float)bases[i];
+    }
+
+    int diff = (int)avail - (int)basis_sum;
+
     unsigned int used = 0;
 
     for (unsigned int i = 0; i < node->child_count; i++) {
         VuiNode *c = node->children[i];
-        unsigned int size = c->basis;
+        unsigned int size = bases[i];
 
         if (diff > 0 && grow_sum > 0) {
             size += (unsigned int)((float)diff * (c->grow / grow_sum));
         } else if (diff < 0 && shrink_basis_sum > 0) {
-            float weight = (c->shrink * (float)c->basis) / shrink_basis_sum;
+            float weight = (c->shrink * (float)bases[i]) / shrink_basis_sum;
             size = sub(size, (unsigned int)((float)(-diff) * weight));
         }
 
@@ -143,8 +170,9 @@ void node_layout(VuiNode *node, VuiRect rect)
 
     // Float distribution above can leave the row/column a cell or two
     // short of `avail` from rounding -- hand the remainder to the
-    // last child so the total always fills exactly.
-    if (used < avail) {
+    // last child so the total always fills exactly. Only when something
+    // grows: otherwise the leftover space stays empty.
+    if (used < avail && diff > 0 && grow_sum > 0) {
         sizes[node->child_count - 1] += avail - used;
     }
 

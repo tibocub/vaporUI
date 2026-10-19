@@ -42,6 +42,7 @@ On Windows, AltGr is reported by Windows as Ctrl+Alt; not tested yet.
 
 ### Known quirks
 
+- Raw mode clears `ISIG`, `IXON` and `IEXTEN`: Ctrl-C/Z/\\ , Ctrl-S/Q and Ctrl-V reach the app as ordinary Ctrl keys (nothing is swallowed by the tty). Terminals themselves still keep Ctrl-Shift-C/V for their own copy/paste.
 - A lone `Escape` is recognised after a 25 ms timeout (`VUI_ESCAPE_TIMEOUT_MS` in `posix.c`).
   `ESC` then a key sent much later arrives as two events.
 - Legacy `Ctrl-H` is byte 8, which is also what many terminals send for Ctrl+Backspace.

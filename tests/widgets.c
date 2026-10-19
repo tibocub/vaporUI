@@ -262,6 +262,21 @@ int main(void)
     assert(!strcmp(out, "xyz") && sa->cursor == 3);
     node_destroy(sn);
 
+    // content-based sizing: buttons are label + 4 wide, 2-cell gap, leftover stays empty
+    VuiNode *row = node_create();
+    row->gap = 2;
+    VuiButton *b1 = button_create("OK", NULL), *b2 = button_create("Cancel", NULL);
+    VuiLabel *lab = label_create("ab\nlonger");
+    node_add(row, &b1->node);
+    node_add(row, &b2->node);
+    node_layout(row, (VuiRect){ 0, 0, 40, 1 });
+    assert(b1->node.rect.x == 0 && b1->node.rect.width == 6);
+    assert(b2->node.rect.x == 8 && b2->node.rect.width == 10);
+    assert(node_measure(row, 1) == 6 + 2 + 10 && node_measure(row, 0) == 1);
+    assert(node_measure(&lab->node, 1) == 6 && node_measure(&lab->node, 0) == 2);
+    node_destroy(&lab->node);
+    node_destroy(row);
+
     puts("widgets: ok");
     return 0;
 }

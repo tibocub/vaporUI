@@ -42,14 +42,15 @@ tree  -> node_layout (node.c)    -> node->rect -> node_draw -> scr_set (screen.c
 | `src/screen.c` | Front/back cell buffers, diff flush, clip rect, SGR output |
 | `src/node.c` | Tree, flexbox layout, clipped draw |
 | `src/focus.c` | Focus, Tab traversal, hit testing, hover, event bubbling |
+| `src/clipboard.c` | In-process clipboard + hook to the terminal's (OSC 52) |
 | `src/controls.c` | Flat key -> action table for app-wide shortcuts |
 | `src/widgets/*.c` | One file per widget |
 
 ## Layout in one paragraph
 
 Every node has `direction` (row/column), and along its parent's main axis `basis`, `grow`, `shrink`;
-plus `gap` and uniform `padding` for its children. Cross axis always stretches. There is no
-content-based sizing: you give widgets a `basis` or `grow`. `node->rect` is filled by `node_layout`
+plus `gap` and uniform `padding` for its children. Cross axis always stretches. `basis = VUI_AUTO`
+sizes a node from its content (see `widgets.md`). `node->rect` is filled by `node_layout`
 and is what draw callbacks and hit testing use.
 
 ## Events and focus

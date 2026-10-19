@@ -218,12 +218,15 @@ typedef void (*VuiDraw)(VuiNode *node, VuiScreen *scr, void *userdata);
 // Return 1 if the event was handled, 0 to let it bubble to the parent.
 typedef int (*VuiOnEvent)(VuiNode *node, VuiCtx *ui, const VuiEvent *event);
 
+// basis value meaning "as big as my content": see node->measure
+#define VUI_AUTO ((unsigned int)-1)
+
 struct VuiNode {
     VuiDirection direction;
 
     float grow;
     float shrink;
-    unsigned int basis;
+    unsigned int basis; // size along the parent's main axis; VUI_AUTO sizes from content
 
     unsigned int gap;
     unsigned int padding;
@@ -232,6 +235,9 @@ struct VuiNode {
 
     VuiDraw draw;
     VuiOnEvent on_event;
+    // Natural size of this node's content: its width if `row`, else its height.
+    // Containers without one are measured from their children.
+    unsigned int (*measure)(VuiNode *node, int row);
     void (*destroy)(VuiNode *node); // called by node_destroy, for widgets owning memory
     void *userdata; // free for the app to use
 
@@ -257,6 +263,7 @@ void node_add(VuiNode *parent, VuiNode *child);
 void node_remove(VuiNode *child);
 
 void node_layout(VuiNode *root, VuiRect available);
+unsigned int node_measure(VuiNode *node, int row); // width if row, else height; honours basis and children
 void node_draw(VuiNode *node, VuiScreen *scr);
 
 // -- Clipboard --
@@ -315,9 +322,18 @@ int ctl_dispatch(VuiControls *c, VuiCtx *ui, const VuiKeyEvent *event);
 // -- Widgets --
 //
 // Each create function returns a node to node_add() somewhere. Widgets
-// don't size themselves from their content yet: set basis/grow like on
-// any node. Set node.userdata to reach your own state from callbacks.
+// size themselves from their content (VUI_AUTO basis) unless you set
+// basis/grow. Set node.userdata to reach your own state from callbacks.
 // Strings passed in are not copied, keep them alive.
+
+// Static text, '\n' separates lines.
+typedef struct {
+    VuiNode node;
+    const char *text;
+    VuiStyle style;
+} VuiLabel;
+
+VuiLabel *label_create(const char *text);
 
 // Plain container that can paint a background.
 typedef struct {

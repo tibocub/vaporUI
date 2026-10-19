@@ -24,11 +24,6 @@ typedef struct {
     unsigned int search_len;
 } App;
 
-static void draw_label(VuiNode *node, VuiScreen *scr, void *userdata)
-{
-    scr_puts(scr, node->rect.x, node->rect.y, userdata, (VuiStyle){0});
-}
-
 static void draw_status(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     App *app = userdata;
@@ -36,16 +31,6 @@ static void draw_status(VuiNode *node, VuiScreen *scr, void *userdata)
 
     snprintf(line, sizeof(line), "%s   [search: %u chars]", app->greeting, app->search_len);
     scr_puts(scr, node->rect.x, node->rect.y, line, (VuiStyle){ .attr = VUI_ATTR_BOLD });
-}
-
-static VuiNode *label(const char *s)
-{
-    VuiNode *n = node_create();
-
-    n->basis = 1;
-    n->draw = draw_label;
-    n->userdata = (void *)s;
-    return n;
 }
 
 static void on_submit(VuiNode *input)
@@ -107,13 +92,13 @@ int main(void)
     app.name = input_create(12);
     app.name->node.userdata = &app;
     app.name->on_submit = on_submit;
-    node_add(&frame->node, label("name (Enter to greet, max 12):"));
+    node_add(&frame->node, &label_create("name (Enter to greet, max 12):")->node);
     node_add(&frame->node, &app.name->node);
 
     app.search = input_create(200);
     app.search->node.userdata = &app;
     app.search->on_change = on_search;
-    node_add(&frame->node, label("search:"));
+    node_add(&frame->node, &label_create("search:")->node);
     node_add(&frame->node, &app.search->node);
 
     VuiButton *clear = button_create("Clear", on_clear);

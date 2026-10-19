@@ -2,6 +2,18 @@
 
 #include "../../include/vaporui.h"
 
+static unsigned int checklist_measure(VuiNode *node, int row)
+{
+    VuiChecklist *l = (VuiChecklist *)node;
+    unsigned int width = 0;
+
+    for (unsigned int i = 0; i < l->count; i++) {
+        if (vui_str_width(l->items[i]) > width) width = vui_str_width(l->items[i]);
+    }
+
+    return row ? width + 4 : l->count;
+}
+
 static void checklist_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiChecklist *l = (VuiChecklist *)node;
@@ -111,6 +123,8 @@ VuiChecklist *checklist_create(const char **items, unsigned int count, int radio
         }
 
         l->node.grow = 1;
+        l->node.basis = VUI_AUTO;
+        l->node.measure = checklist_measure;
         l->node.focusable = 1;
         l->node.draw = checklist_draw;
         l->node.on_event = checklist_event;

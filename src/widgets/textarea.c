@@ -3,6 +3,7 @@
 
 #include "../../include/vaporui.h"
 #include "../utf8.h"
+#include "util.h"
 
 #define NONE ((unsigned int)-1)
 #define HISTORY_MAX_CHARS 65536 // shortcut: history is dropped entirely past this, no partial trimming
@@ -61,19 +62,11 @@ static unsigned int line_end(const VuiTextarea *t, unsigned int i)
     return i;
 }
 
-static unsigned int cw(VuiCodepoint c)
-{
-    int w = vui_cp_width(c);
-
-    return w > 0 ? (unsigned int)w : 1; // a stray control character still takes a cell
-}
+#define cw cell_w
 
 static unsigned int cols(const VuiTextarea *t, unsigned int from, unsigned int to)
 {
-    unsigned int c = 0;
-
-    for (; from < to; from++) c += cw(t->text[from]);
-    return c;
+    return cells(t->text, from, to);
 }
 
 // Width the text wraps at; one column is left free for the cursor at a line end.

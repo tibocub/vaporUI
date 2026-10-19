@@ -2,6 +2,7 @@
 
 #include "../../include/vaporui.h"
 #include "../utf8.h"
+#include "util.h"
 
 static void changed(VuiInput *in)
 {
@@ -115,9 +116,10 @@ static int input_event(VuiNode *node, VuiCtx *ui, const VuiEvent *event)
 
     case VUI_EVENT_MOUSE:
         if (event->mouse.action == VUI_MOUSE_PRESS && event->mouse.button == VUI_MOUSE_LEFT) {
-            unsigned int i = in->left + (event->mouse.x - node->rect.x);
+            unsigned int i = in->left, c = 0, x = event->mouse.x - node->rect.x;
 
-            in->cursor = i < in->len ? i : in->len;
+            while (i < in->len && c + cell_w(in->text[i]) <= x) c += cell_w(in->text[i++]);
+            in->cursor = i;
             return 1;
         }
         return 0;
@@ -133,6 +135,14 @@ static int input_event(VuiNode *node, VuiCtx *ui, const VuiEvent *event)
     return result >= 0;
 }
 
+// Natural width is the capacity, up to 40 columns.
+static unsigned int input_measure(VuiNode *node, int row)
+{
+    unsigned int cap = ((VuiInput *)node)->cap;
+
+    return row ? (cap < 40 ? cap : 40) : 1;
+}
+
 static void input_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiInput *in = (VuiInput *)node;
@@ -145,23 +155,23 @@ static void input_draw(VuiNode *node, VuiScreen *scr, void *userdata)
         return;
     }
 
-    // keep the cursor inside the visible window
+    // keep the cursor (a wide one needs 2 columns) inside the visible window
     if (in->cursor < in->left) {
         in->left = in->cursor;
-    } else if (in->cursor - in->left >= r.width) {
-        in->left = in->cursor - r.width + 1;
+    }
+
+    while (in->left < in->cursor && cells(in->text, in->left, in->cursor) + (in->cursor < in->len ? cell_w(in->text[in->cursor]) : 1) > r.width) {
+        in->left++;
     }
 
     scr_fill(scr, (VuiRect){ r.x, r.y, r.width, 1 }, ' ', style);
 
-    for (unsigned int i = 0; i < r.width && in->left + i < in->len; i++) {
-        scr_set(scr, r.x + i, r.y, in->text[in->left + i], style);
+    for (unsigned int i = in->left, c = 0; i < in->len && c + cell_w(in->text[i]) <= r.width; c += cell_w(in->text[i++])) {
+        scr_set(scr, r.x + c, r.y, in->text[i], style);
     }
 
     if (node->focused) {
-        unsigned int c = in->cursor - in->left;
-
-        scr_set(scr, r.x + c, r.y, in->cursor < in->len ? in->text[in->cursor] : ' ', (VuiStyle){ .attr = VUI_ATTR_REVERSE });
+        scr_set(scr, r.x + cells(in->text, in->left, in->cursor), r.y, in->cursor < in->len ? in->text[in->cursor] : ' ', (VuiStyle){ .attr = VUI_ATTR_REVERSE });
     }
 }
 
@@ -171,7 +181,8 @@ VuiInput *input_create(unsigned int max_chars)
 
     if (in != NULL) {
         in->cap = max_chars;
-        in->node.basis = 1;
+        in->node.basis = VUI_AUTO;
+        in->node.measure = input_measure;
         in->node.focusable = 1;
         in->node.draw = input_draw;
         in->node.on_event = input_event;

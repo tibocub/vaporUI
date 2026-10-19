@@ -1,6 +1,11 @@
 
 #include "../../include/vaporui.h"
 
+static unsigned int button_measure(VuiNode *node, int row)
+{
+    return row ? vui_str_width(((VuiButton *)node)->label) + 4 : 1;
+}
+
 static void button_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiButton *b = (VuiButton *)node;
@@ -53,7 +58,8 @@ VuiButton *button_create(const char *label, void (*on_click)(VuiNode *button))
     if (b != NULL) {
         b->label = label;
         b->on_click = on_click;
-        b->node.basis = 1;
+        b->node.basis = VUI_AUTO;
+        b->node.measure = button_measure;
         b->node.focusable = 1;
         b->node.draw = button_draw;
         b->node.on_event = button_event;
