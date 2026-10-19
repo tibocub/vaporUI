@@ -23,7 +23,7 @@ build:
 test: build
 	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c -o build/input-test
 	build/input-test
-	$(CC) $(CFLAGS) tests/widgets.c src/widgets/*.c src/node.c src/screen.c src/utf8.c -o build/widgets-test
+	$(CC) $(CFLAGS) tests/widgets.c src/widgets/*.c src/clipboard.c src/node.c src/screen.c src/utf8.c -o build/widgets-test
 	build/widgets-test
 
 clean:

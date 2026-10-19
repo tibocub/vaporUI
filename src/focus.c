@@ -112,24 +112,29 @@ static void set_hover(VuiCtx *ui, VuiNode *root, VuiNode *hit)
     }
 }
 
-static int bubble(VuiNode *target, VuiCtx *ui, const VuiEvent *event)
+// Returns the node that handled the event, or NULL.
+static VuiNode *bubble(VuiNode *target, VuiCtx *ui, const VuiEvent *event)
 {
     for (; target != NULL; target = target->parent) {
         if (target->on_event != NULL && target->on_event(target, ui, event)) {
-            return 1;
+            return target;
         }
     }
 
-    return 0;
+    return NULL;
 }
 
 int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
 {
-    VuiNode *target;
+    VuiNode *target, *handler;
 
     // The focused node may have been destroyed or removed since last time.
     if (ui->focus != NULL && !in_tree(root, ui->focus)) {
         ui->focus = NULL; // not via vui_set_focus(): the old node may be freed
+    }
+
+    if (ui->capture != NULL && !in_tree(root, ui->capture)) {
+        ui->capture = NULL;
     }
 
     switch (event->type) {
@@ -137,7 +142,7 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
         // Ctrl-Tab always moves focus, even out of a node that wants Tab
         if (event->key.key == VUI_KEY_TAB && (event->key.modifiers & ~(VUI_MOD_SHIFT | VUI_MOD_CTRL)) == 0) {
             if (!(event->key.modifiers & VUI_MOD_CTRL) && vui_focus(ui) != NULL
-                && vui_focus(ui)->wants_tab && bubble(vui_focus(ui), ui, event)) {
+                && vui_focus(ui)->wants_tab && bubble(vui_focus(ui), ui, event) != NULL) {
                 return 1;
             }
 
@@ -157,6 +162,16 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
         target = node_at(root, event->mouse.x, event->mouse.y);
         set_hover(ui, root, target);
 
+        if (ui->capture != NULL) {
+            VuiNode *owner = ui->capture;
+
+            if (event->mouse.action == VUI_MOUSE_RELEASE || event->mouse.button == VUI_MOUSE_NONE) {
+                ui->capture = NULL;
+            }
+
+            return bubble(owner, ui, event) != NULL;
+        }
+
         if (event->mouse.action == VUI_MOUSE_PRESS && event->mouse.button == VUI_MOUSE_LEFT) {
             VuiNode *f = target;
 
@@ -174,5 +189,12 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
         return 0;
     }
 
-    return bubble(target, ui, event);
+    handler = bubble(target, ui, event);
+
+    if (handler != NULL && event->type == VUI_EVENT_MOUSE && event->mouse.action == VUI_MOUSE_PRESS
+        && event->mouse.button == VUI_MOUSE_LEFT) {
+        ui->capture = handler;
+    }
+
+    return handler != NULL;
 }

@@ -259,11 +259,22 @@ void node_remove(VuiNode *child);
 void node_layout(VuiNode *root, VuiRect available);
 void node_draw(VuiNode *node, VuiScreen *scr);
 
+// -- Clipboard --
+//
+// An in-process clipboard shared by all widgets, also forwarded to the
+// system clipboard through the terminal (OSC 52) where supported. There
+// is no portable way to read the system clipboard from a terminal: use
+// the terminal's own paste (Ctrl-Shift-V), which arrives as a paste event.
+
+void vui_clipboard_set(const char *utf8);
+const char *vui_clipboard_get(void); // never NULL
+
 // -- Focus and event routing --
 //
 // vui_render() lays out `root` over the whole terminal and draws it.
 // vui_dispatch() routes one event: Tab/Shift-Tab move focus, a left
-// click focuses the focusable node under the pointer, keys/text/paste go
+// click focuses the focusable node under the pointer (and the node that
+// handled a left press keeps getting the mouse until release, so drags work), keys/text/paste go
 // to the focused node, mouse events to the node under the pointer.
 // Each is offered to on_event() up the parent chain until one returns 1.
 // Returns 1 if some node handled it.
@@ -380,28 +391,47 @@ size_t input_get_text(const VuiInput *input, char *out, size_t size);
 
 // Multi-line text editor. The text is one buffer of characters with '\n'
 // between lines; it grows as needed up to max_chars (0 = unlimited).
-// Keys: arrows (Up/Down remember the column), Home/End, Ctrl-Home/End,
-// PageUp/PageDown, Ctrl/Alt+Left/Right (words), Enter, Tab (inserts
-// spaces up to the next multiple of tab_width), Backspace/Delete,
+//
+// Keys: arrows (Up/Down remember the column), Home/End (visual row),
+// Ctrl-Home/End, PageUp/PageDown, Ctrl/Alt+Left/Right (words); Shift +
+// any of those selects, and so does dragging the mouse. Enter, Tab
+// (spaces up to the next multiple of tab_width), Backspace/Delete,
 // Ctrl-W / Ctrl-Backspace, Ctrl-U (to line start), Ctrl-K (to line end,
-// or joins the next line), wheel, click, paste. Shift-Tab and Ctrl-Tab
-// leave the field. Lines scroll sideways, they are not wrapped.
+// or joins the next line), Ctrl-Z undo, Ctrl-Y / Ctrl-Shift-Z redo.
+// Clipboard: Ctrl-C copy (only with a selection, so Ctrl-C elsewhere
+// still bubbles), Ctrl-X / Shift-Delete cut, Ctrl-V / Shift-Insert
+// paste, Ctrl-Insert copy. Alt-A selects all. Wheel scrolls, click
+// places the cursor, paste events insert text.
+//
+// Lines wrap at word boundaries when `wrap` is set (default); otherwise
+// they scroll sideways. Shift-Tab and Ctrl-Tab leave the field.
+typedef struct VuiHistory VuiHistory;
+
 typedef struct {
     VuiNode node;
     VuiCodepoint *text;
     unsigned int len, cap, max;
     unsigned int cursor; // index into text
+    unsigned int anchor; // other end of the selection; equals cursor when nothing is selected
     unsigned int want;   // column Up/Down try to return to
-    unsigned int top;    // index of the first visible line's start
-    unsigned int left;   // first visible column
+    unsigned int top;    // index of the first visible row's start
+    unsigned int left;   // first visible column (no-wrap mode)
     unsigned int tab_width;
+    int wrap;            // default 1
+    int auto_indent;     // Enter copies the current line's indentation; default 0
     int reveal;          // scroll to the cursor on next draw
+    int changed;
+    VuiHistory *history;
     void (*on_change)(VuiNode *textarea);
 } VuiTextarea;
 
 VuiTextarea *textarea_create(unsigned int max_chars);
 void textarea_set_text(VuiTextarea *ta, const char *utf8);
 size_t textarea_get_text(const VuiTextarea *ta, char *out, size_t size);
-void textarea_cursor_pos(const VuiTextarea *ta, unsigned int *line, unsigned int *column); // 0-based
+void textarea_cursor_pos(const VuiTextarea *ta, unsigned int *line, unsigned int *column); // 0-based, column in characters
+void textarea_select_all(VuiTextarea *ta);
+size_t textarea_get_selection(const VuiTextarea *ta, char *out, size_t size); // empty string if none
+void textarea_undo(VuiTextarea *ta);
+void textarea_redo(VuiTextarea *ta);
 
 #endif

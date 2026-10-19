@@ -9,6 +9,7 @@
 
 #include "../../include/vaporui.h"
 #include "../input.h"
+#include "../ctx.h"
 
 // How long to wait for the rest of an escape sequence once a lone
 // ESC byte has come in, before giving up and reporting a standalone
@@ -18,6 +19,8 @@
 // bounded wait tells a real Escape keypress apart from the start of
 // e.g. an arrow key without perceptibly delaying either one.
 #define VUI_ESCAPE_TIMEOUT_MS 25
+
+static void osc52_copy(const char *utf8);
 
 static struct termios original_termios;
 static volatile sig_atomic_t resize_pending = 0;
@@ -44,7 +47,9 @@ int vui_platform_init(void)
     // ECHO		-> don't print in term the pressed keys
     // ISIG		-> don't interpret keys, only pass them (for
     //           example, 'ctrl-c' sends 0x03, not SIGINT)
-    raw.c_lflag &= ~(ICANON | ECHO | ISIG);
+    // IEXTEN -> don't swallow Ctrl-V (literal-next); IXON -> Ctrl-S / Ctrl-Q are keys, not flow control
+    raw.c_lflag &= ~(ICANON | ECHO | ISIG | IEXTEN);
+    raw.c_iflag &= ~IXON;
 
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
@@ -63,6 +68,7 @@ int vui_platform_init(void)
     }
 
     vui_input_reset(&input_decoder);
+    vui_clipboard_hook = osc52_copy;
 
     // kitty keyboard protocol ('disambiguate') and xterm modifyOtherKeys
     // level 1: let terminals that support either report Ctrl/Alt/Shift on
@@ -83,6 +89,29 @@ void vui_platform_shutdown(void)
         TCSAFLUSH,
         &original_termios
     );
+}
+
+static void osc52_copy(const char *utf8)
+{
+    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t n = strlen(utf8);
+
+    fputs("\033]52;c;", stdout);
+
+    for (size_t i = 0; i < n; i += 3) {
+        unsigned int v = (unsigned char)utf8[i] << 16;
+
+        if (i + 1 < n) v |= (unsigned char)utf8[i + 1] << 8;
+        if (i + 2 < n) v |= (unsigned char)utf8[i + 2];
+
+        putchar(b64[v >> 18]);
+        putchar(b64[(v >> 12) & 63]);
+        putchar(i + 1 < n ? b64[(v >> 6) & 63] : '=');
+        putchar(i + 2 < n ? b64[v & 63] : '=');
+    }
+
+    fputs("\007", stdout);
+    fflush(stdout);
 }
 
 void vui_platform_set_mouse(int level)

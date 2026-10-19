@@ -161,6 +161,107 @@ int main(void)
     assert(capped->len == 3);
     node_destroy(&capped->node);
 
+    // selection, clipboard
+    VuiTextarea *sa = textarea_create(0);
+    VuiNode *sn = &sa->node;
+    sn->rect = (VuiRect){ 0, 0, 20, 4 };
+    textarea_set_text(sa, "hello world");
+    key(sn, VUI_KEY_RIGHT, VUI_MOD_SHIFT, 0);
+    key(sn, VUI_KEY_RIGHT, VUI_MOD_SHIFT, 0);
+    textarea_get_selection(sa, out, sizeof out);
+    assert(!strcmp(out, "he"));
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'x');  // cut
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "llo world") && !strcmp(vui_clipboard_get(), "he"));
+    key(sn, VUI_KEY_END, 0, 0);
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'v');  // paste at the end
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "llo worldhe"));
+    key(sn, VUI_KEY_LEFT, VUI_MOD_CTRL | VUI_MOD_SHIFT, 0); // select the last word
+    text(sn, 'X');                                          // typing replaces the selection
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "llo X"));
+    assert(sn->on_event(sn, NULL, &(VuiEvent){ .type = VUI_EVENT_KEY, .key = { VUI_KEY_CHAR, VUI_MOD_CTRL, 'c' } }) == 0); // no selection: bubbles
+    textarea_select_all(sa);
+    key(sn, VUI_KEY_BACKSPACE, 0, 0);
+    assert(sa->len == 0);
+
+    // undo / redo: typing merges into one step, backspace runs too
+    textarea_set_text(sa, "");
+    type(sn, "abc");
+    key(sn, VUI_KEY_ENTER, 0, 0);
+    type(sn, "def");
+    key(sn, VUI_KEY_BACKSPACE, 0, 0);
+    key(sn, VUI_KEY_BACKSPACE, 0, 0);
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "abc\nd"));
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'z');   // undoes both backspaces
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "abc\ndef") && sa->cursor == 7);
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'z');   // typing "def"
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'z');   // the newline
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "abc"));
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'y');
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'y');
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "abc\ndef"));
+    type(sn, "!");                              // new edit drops the redo history
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'y');
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "abc\ndef!"));
+    textarea_select_all(sa);
+    type(sn, "z");
+    key(sn, VUI_KEY_CHAR, VUI_MOD_CTRL, 'z');   // undo a replaced selection restores it
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "abc\ndef!"));
+
+    // auto-indent
+    sa->auto_indent = 1;
+    textarea_set_text(sa, "    foo");
+    key(sn, VUI_KEY_END, VUI_MOD_CTRL, 0);
+    key(sn, VUI_KEY_ENTER, 0, 0);
+    type(sn, "x");
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "    foo\n    x"));
+
+    // wrapping: width 8 leaves 7 columns per row, breaking after spaces
+    sn->rect = (VuiRect){ 0, 0, 8, 4 };
+    textarea_set_text(sa, "aaa bbb ccc");      // rows: "aaa bbb " and "ccc"
+    key(sn, VUI_KEY_DOWN, 0, 0);
+    assert(sa->cursor == 8);
+    key(sn, VUI_KEY_DOWN, 0, 0);               // last row: stays
+    assert(sa->cursor == 8);
+    key(sn, VUI_KEY_HOME, 0, 0);
+    assert(sa->cursor == 8);
+    key(sn, VUI_KEY_UP, 0, 0);
+    assert(sa->cursor == 0);
+    key(sn, VUI_KEY_END, 0, 0);                // end of a wrapped row is before the break
+    assert(sa->cursor == 7);
+    sa->wrap = 0;
+    textarea_set_text(sa, "aaa bbb ccc");
+    key(sn, VUI_KEY_DOWN, 0, 0);
+    assert(sa->cursor == 0);                   // single row without wrapping
+    sa->wrap = 1;
+
+    // wide characters: Up/Down use display columns (each CJK character is 2 wide)
+    sn->rect = (VuiRect){ 0, 0, 20, 4 };
+    textarea_set_text(sa, "\xe6\x97\xa5\xe6\x9c\xac\nabcd");
+    key(sn, VUI_KEY_RIGHT, 0, 0);
+    key(sn, VUI_KEY_RIGHT, 0, 0);              // after both characters: column 4
+    key(sn, VUI_KEY_DOWN, 0, 0);
+    assert(sa->cursor == 3 + 4);
+    assert(vui_cp_width(0x65E5) == 2 && vui_cp_width('a') == 1 && vui_cp_width(0x301) == 0 && vui_str_width("a\xe6\x97\xa5") == 3);
+
+    // max_chars with a selection; history survives set_text
+    textarea_set_text(sa, "abc");
+    sa->max = 3;
+    textarea_select_all(sa);
+    type(sn, "xyz123");
+    textarea_get_text(sa, out, sizeof out);
+    assert(!strcmp(out, "xyz") && sa->cursor == 3);
+    node_destroy(sn);
+
     puts("widgets: ok");
     return 0;
 }
