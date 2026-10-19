@@ -21,8 +21,13 @@ example (or extend one).
 
 - `input-handling`: keys, modifiers, mouse, paste, resize, global controls
 - `layout-resize`: nested flexbox panes, live resize
+- `focus-routing`: custom nodes, focus, event bubbling
+- `borders`: border and div containers
+- `buttons-and-lists`: button, checklist, radio list
 
 `make test` runs the automated checks (`tests/`): the input decoder.
+`tests/screen.py build/<example> ROWS COLS -- '\t' 'text' ...` runs an example in a pty, sends keys/mouse
+sequences, and prints the rendered screen (needs `pip install pyte`).
 
 ## TODO
 VaporUI API:
@@ -51,12 +56,12 @@ Layout:
 - [ ] justify-content variants (currently packed-from-start + gap only)
 - [ ] content-based sizing (basis is always explicit -- no text measurement yet)
 - [ ] per-side padding (currently uniform only)
-- [ ] draw callbacks aren't clipped to their node's rect yet
+- [x] draw callbacks are clipped to their node's rect
 
 Controls:
 - [x] flat key -> action binding table (ctl_create/ctl_bind/ctl_dispatch)
 - [x] Ctrl+<letter> decodes generally now, not just Ctrl-C (VUI_KEY_CHAR + VuiKeyEvent.character)
-- [ ] per-node/focus-scoped controls (needs a real focusable widget first -- see widgets below)
+- [x] focus (Tab/Shift-Tab/click) and per-node `on_event` with bubbling to parents (`vui_dispatch`)
 - [x] F1-F12, Insert (CSI n~ and SS3)
 - [x] Alt (ESC prefix), Shift+Tab, xterm modified arrows/nav (CSI 1;m X), SS3 arrows, kitty CSI-u (any key + any modifier; enabled at init)
 - [x] mouse (xterm SGR 1006: press/release/drag/wheel + modifiers; opt-in via vui_set_mouse)
@@ -73,11 +78,11 @@ VaporUI widgets:
 - [ ] popup
 - [ ] drop-down
 - [ ] bar (maybe distinct menubar/status bar widgets)
-- [ ] border
-- [ ] div
-- [ ] push button
-- [ ] radio button
-- [ ] check-list
+- [x] border
+- [x] div
+- [x] push button
+- [x] radio button
+- [x] check-list
 - [ ] text area
 - [ ] form
 - [ ] tree

@@ -4,7 +4,7 @@ CFLAGS := -Wall
 TARGET ?= POSIX
 POSIX := src/platform/posix.c
 
-SRCS := $(shell find src -maxdepth 1 -type f -name "*.c")
+SRCS := $(shell find src -maxdepth 2 -type f -name "*.c" -not -path "src/platform/*")
 EXAMPLES := $(patsubst examples/%.c,build/%,$(wildcard examples/*.c))
 
 .PHONY: all test clean

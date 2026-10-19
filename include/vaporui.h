@@ -292,4 +292,59 @@ void ctl_bind(
 // otherwise.
 int ctl_dispatch(VuiControls *c, VuiCtx *ui, const VuiKeyEvent *event);
 
+// -- Widgets --
+//
+// Each create function returns a node to node_add() somewhere. Widgets
+// don't size themselves from their content yet: set basis/grow like on
+// any node. Set node.userdata to reach your own state from callbacks.
+// Strings passed in are not copied, keep them alive.
+
+// Plain container that can paint a background.
+typedef struct {
+    VuiNode node;
+    VuiStyle style;
+} VuiDiv;
+
+VuiDiv *div_create(VuiDirection direction);
+
+// Draws a frame around its rect; children go inside it (padding 1).
+typedef enum {
+    VUI_BORDER_SINGLE,
+    VUI_BORDER_ROUNDED,
+    VUI_BORDER_DOUBLE
+} VuiBorderStyle;
+
+typedef struct {
+    VuiNode node;
+    const char *title; // may be NULL
+    VuiBorderStyle border;
+    VuiStyle style;
+} VuiBorder;
+
+VuiBorder *border_create(const char *title);
+
+// Activated by Enter, Space or a left click.
+typedef struct {
+    VuiNode node;
+    const char *label;
+    void (*on_click)(VuiNode *button);
+} VuiButton;
+
+VuiButton *button_create(const char *label, void (*on_click)(VuiNode *button));
+
+// A list of items navigated with Up/Down/Home/End or the mouse, toggled
+// with Space/Enter/click. In radio mode exactly one item is selected.
+typedef struct {
+    VuiNode node;
+    const char **items;
+    unsigned int count;
+    unsigned int cursor;
+    unsigned int top;  // first visible row
+    int radio;
+    void (*on_change)(VuiNode *list, unsigned int index);
+    unsigned char checked[]; // one flag per item
+} VuiChecklist;
+
+VuiChecklist *checklist_create(const char **items, unsigned int count, int radio);
+
 #endif
