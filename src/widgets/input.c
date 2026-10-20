@@ -147,9 +147,11 @@ static void input_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiInput *in = (VuiInput *)node;
     VuiRect r = node->rect;
-    VuiStyle style = { .attr = VUI_ATTR_UNDERLINE | (node->hovered ? VUI_ATTR_BOLD : VUI_ATTR_NONE) };
+    VuiStyle style = vui_theme()->text;
 
     (void)userdata;
+
+    style.attr |= VUI_ATTR_UNDERLINE | (node->hovered ? VUI_ATTR_BOLD : VUI_ATTR_NONE);
 
     if (r.width == 0) {
         return;

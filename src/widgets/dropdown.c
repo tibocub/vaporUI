@@ -38,7 +38,7 @@ static void popup_select(VuiList *l, unsigned int i)
     VuiCtx *ui = vui_ctx();
 
     d->selected = i;
-    vui_overlay_remove(ui, l->node.parent); // the border around the list
+    vui_overlay_remove(ui, &l->node);
 
     if (d->on_change != NULL) {
         d->on_change(&d->node, i);

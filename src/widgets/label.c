@@ -52,6 +52,7 @@ VuiLabel *label_create(const char *text)
 
     if (l != NULL) {
         l->text = text;
+        l->style = vui_theme()->text;
         l->node.basis = VUI_AUTO;
         l->node.draw = label_draw;
         l->node.measure = label_measure;

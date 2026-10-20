@@ -403,7 +403,7 @@ const char *vui_clipboard_get(void); // never NULL
 
 // Returns 0, or -1 if there are too many overlays (8); the node stays yours then.
 int vui_overlay_add(VuiCtx *ui, VuiNode *node, VuiRect rect, int flags);
-void vui_overlay_remove(VuiCtx *ui, VuiNode *node);
+void vui_overlay_remove(VuiCtx *ui, VuiNode *node); // node: the overlay's root, or any node inside it
 void vui_overlay_raise(VuiCtx *ui, VuiNode *node);
 
 void vui_render(VuiCtx *ui, VuiNode *root);

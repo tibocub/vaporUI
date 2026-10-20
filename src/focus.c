@@ -232,8 +232,14 @@ static int overlay_index(VuiCtx *ui, VuiNode *node)
 
 void vui_overlay_remove(VuiCtx *ui, VuiNode *node)
 {
-    int i = overlay_index(ui, node);
+    int i;
     VuiNode *back;
+
+    while (node->parent != NULL) {
+        node = node->parent;
+    }
+
+    i = overlay_index(ui, node);
 
     if (i < 0) {
         return;
@@ -287,7 +293,7 @@ void vui_render(VuiCtx *ui, VuiNode *root)
     ui->root = root;
     vui_overlays_free(ui);
     node_layout(root, (VuiRect){ 0, 0, vui_width(ui), vui_height(ui) });
-    vui_clear(ui);
+    scr_clear(vui_screen(ui), vui_theme()->text);
     node_draw(root, vui_screen(ui));
 
     for (unsigned int i = 0; i < ui->overlay_count; i++) {
@@ -295,7 +301,7 @@ void vui_render(VuiCtx *ui, VuiNode *root)
 
         n->active = i + 1 == ui->overlay_count;
         node_layout(n, n->rect);
-        scr_fill(vui_screen(ui), n->rect, ' ', (VuiStyle){0});
+        scr_fill(vui_screen(ui), n->rect, ' ', vui_theme()->text);
         node_draw(n, vui_screen(ui));
     }
 

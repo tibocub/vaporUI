@@ -12,6 +12,7 @@ VuiDiv *div_create(VuiDirection direction)
 
     if (div != NULL) {
         div->node.direction = direction;
+        div->style = vui_theme()->text;
         div->node.draw = div_draw;
     }
 
