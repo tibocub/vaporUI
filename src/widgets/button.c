@@ -1,4 +1,3 @@
-
 #include "../../include/vaporui.h"
 
 static unsigned int button_measure(VuiNode *node, int row)

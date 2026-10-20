@@ -28,3 +28,9 @@ const char *vui_clipboard_get(void)
 {
     return clip != NULL ? clip : "";
 }
+
+void vui_clipboard_free(void)
+{
+    free(clip);
+    clip = NULL;
+}

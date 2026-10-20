@@ -223,6 +223,7 @@ int main(void)
         return 1;
     }
 
+    opened = 0; // statics survive between runs on NuttX
     classic = *vui_theme();
     vui_set_mouse(ui, 2);
     tick(ui, NULL);

@@ -10,6 +10,7 @@
 #include "../../include/vaporui.h"
 #include "../input.h"
 #include "../ctx.h"
+#define VUI_OUT_BUFFER 16384 // one console write per few frames beats a write per cell
 #include "vtout.h"
 
 #ifndef ENABLE_VIRTUAL_TERMINAL_INPUT

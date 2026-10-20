@@ -19,14 +19,24 @@
 // e.g. an arrow key without perceptibly delaying either one.
 #define VUI_ESCAPE_TIMEOUT_MS 25
 
+// stdio buffer for the terminal: a frame goes out in a few writes instead of one per cell. Small
+// targets pay for it in RAM, consoles that are slow per write (Windows) want more.
+#ifndef VUI_OUT_BUFFER
+#ifdef __NuttX__
+#define VUI_OUT_BUFFER 512
+#else
+#define VUI_OUT_BUFFER 4096
+#endif
+#endif
+
 static inline void vtout_start(void)
 {
     const char *ct = getenv("COLORTERM"), *term = getenv("TERM");
 
-    // One write per frame: stdio on a console is unbuffered or line-buffered by default, which is
-    // what made drags crawl on Windows.
+    // Buffered output: stdio on a console is unbuffered or line-buffered by default, which is what
+    // made drags crawl on Windows.
     fflush(stdout);
-    setvbuf(stdout, NULL, _IOFBF, 1 << 16);
+    setvbuf(stdout, NULL, _IOFBF, VUI_OUT_BUFFER);
 
     vui_set_color_depth(ct != NULL && (strstr(ct, "truecolor") || strstr(ct, "24bit")) ? 24
         : term != NULL && strstr(term, "256") ? 8 : 4);

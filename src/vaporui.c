@@ -66,6 +66,8 @@ void vui_shutdown(VuiCtx *ui)
 
     vui_overlays_free(ui);
     scr_destroy(ui->screen);
+    vui_theme_reset();
+    vui_clipboard_free();
     vui_platform_shutdown();
     the_ui = NULL;
     free(ui);

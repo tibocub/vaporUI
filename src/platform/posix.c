@@ -27,6 +27,8 @@ static void handle_sigwinch(int signal)
     resize_pending = 1;
 }
 
+// NuttX's stdout is a function call, not an assignable stream: there the UI always uses stdin/stdout.
+#ifndef __NuttX__
 static void release_tty(void)
 {
     if (saved_stdout != NULL) {
@@ -37,6 +39,9 @@ static void release_tty(void)
         tty_fd = STDIN_FILENO;
     }
 }
+#else
+static void release_tty(void) {}
+#endif
 
 int vui_platform_init(void)
 {
@@ -45,6 +50,7 @@ int vui_platform_init(void)
 
     // Filters (`find | picker`): keys come from the terminal, not the pipe, and the
     // UI is drawn on the terminal, leaving stdout free for the program's result.
+#ifndef __NuttX__
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
         FILE *out;
 
@@ -59,6 +65,7 @@ int vui_platform_init(void)
         fflush(stdout);
         stdout = out;
     }
+#endif
 
     if (tcgetattr(tty_fd, &original_termios) == -1) {
         release_tty();
@@ -118,6 +125,35 @@ void vui_platform_set_mouse(int level)
     vtout_set_mouse(level);
 }
 
+// Serial consoles (NuttX, a bare UART) have no window size: park the cursor in the far corner and
+// ask the terminal where it ended up. shortcut: swallows any key typed during the 300 ms wait.
+static int probe_size(VuiSize *size)
+{
+    char buf[24] = { 0 };
+    unsigned int n = 0, rows, cols;
+    struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
+
+    fputs("\033[s\033[9999;9999H\033[6n\033[u", stdout);
+    fflush(stdout);
+
+    while (n < sizeof(buf) - 1 && poll(&pfd, 1, 300) > 0 && read(tty_fd, buf + n, 1) == 1) {
+        if (buf[n++] == 'R') {
+            buf[n] = '\0';
+            break;
+        }
+    }
+
+    char *reply = strstr(buf, "\033[");
+
+    if (reply == NULL || sscanf(reply, "\033[%u;%uR", &rows, &cols) != 2 || rows == 0 || cols == 0) {
+        return -1;
+    }
+
+    size->width = cols;
+    size->height = rows;
+    return 0;
+}
+
 int vui_platform_get_size(VuiSize *size)
 {
     struct winsize ws;
@@ -126,8 +162,8 @@ int vui_platform_get_size(VuiSize *size)
         return -1;
     }
 
-    if (ioctl(tty_fd, TIOCGWINSZ, &ws) == -1) {
-        return -1;
+    if (ioctl(tty_fd, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0 || ws.ws_row == 0) {
+        return probe_size(size);
     }
 
     size->width = ws.ws_col;

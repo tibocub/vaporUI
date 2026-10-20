@@ -209,10 +209,6 @@ typedef struct {
     VuiAttr attr;
 } VuiStyle;
 
-typedef struct {
-    VuiCodepoint codepoint;
-    VuiStyle style;
-} VuiCell;
 
 typedef struct VuiScreen VuiScreen;
 

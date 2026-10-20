@@ -1,5 +1,6 @@
 // Widget logic tests: drive widgets through on_event with synthetic events.
 #include <assert.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -459,6 +460,7 @@ int main(void)
     vui_set_focus(ui, &btns[0]->node);
     node_layout(root, (VuiRect){ 0, 0, 10, 6 });
     assert(root->scroll == 0);
+    vui_set_focus(ui, NULL); // the ui must not keep pointing into a tree we free
     node_destroy(root);
 
     VuiMenubar *mb = menubar_create(test_menus, 2, on_menu);
@@ -481,7 +483,31 @@ int main(void)
     vui_dispatch(ui, root, &enter);
     assert(ctx_item == 1 && ui->overlay_count == 0);
     vui_dispatch(ui, root, &(VuiEvent){ .type = VUI_EVENT_NONE });
+    vui_set_focus(ui, NULL);
     node_destroy(root);
+
+    // Style table: 240 styles fill it, a frame using only 5 lets the next clear() reclaim it, then 200 new ones must all survive
+    VuiScreen *scr = scr_create(40, 10);
+    char sgr_out[8192] = "";
+    FILE *capture = tmpfile();
+    for (int frame = 0; frame < 3; frame++) {
+        int styles = frame == 0 ? 240 : frame == 1 ? 5 : 200;
+        scr_clear(scr, (VuiStyle){0});
+        for (int i = 0; i < styles; i++) scr_set(scr, i % 40, i / 40, 'x', (VuiStyle){ VUI_RGB(i, frame, 0), 0, 0 });
+        fflush(stdout);
+        int keep = dup(1);
+        dup2(fileno(capture), 1);
+        scr_flush(scr);
+        fflush(stdout);
+        dup2(keep, 1);
+        close(keep);
+        if (frame < 2) rewind(capture), ftruncate(fileno(capture), 0);
+    }
+    rewind(capture);
+    sgr_out[fread(sgr_out, 1, sizeof sgr_out - 1, capture)] = '\0';
+    assert(strstr(sgr_out, "38;2;199;2;0m") != NULL); // the last frame's style 199 got its own table entry
+    fclose(capture);
+    scr_destroy(scr);
 
     root = node_create();
     VuiTextarea *ta2 = textarea_create(0);

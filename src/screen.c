@@ -1,39 +1,92 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../include/vaporui.h"
 #include "utf8.h"
 
+// A cell is a codepoint (low 24 bits) and the id of its style in a per-screen table (high 8 bits):
+// 4 bytes instead of 16, which is what lets an 80x24 double buffer fit in 15 KB on an RP2040.
+typedef uint32_t Cell;
+
+#define CP_MASK     0x00FFFFFFu
+#define CONT_CP     0x00FFFFFEu // second half of a double-width character; never written to the terminal
+#define SENTINEL    0xFFFFFFFFu // matches nothing: every cell reads as "changed" on the first flush
+#define CELL(cp, id) (((Cell)(cp) & CP_MASK) | (Cell)(id) << 24)
+#define CELL_CP(c)  ((c) & CP_MASK)
+#define CELL_STYLE(c) ((c) >> 24)
+
+// shortcut: 255 distinct styles on screen at once; any beyond that draw with the default style.
+// Raise (and widen Cell) if a gradient-heavy app needs more.
+#define MAX_STYLES 255
+
 struct VuiScreen {
     unsigned int width;
     unsigned int height;
-    VuiCell *front; // what's actually on the terminal right now
-    VuiCell *back;  // what the app has drawn, not yet flushed
+    Cell *front; // what's actually on the terminal right now
+    Cell *back;  // what the app has drawn, not yet flushed
     VuiRect clip;
+    VuiStyle styles[MAX_STYLES]; // styles[0] is the default style
+    unsigned int style_count, last_style;
 };
-
-// Second half of a double-width character; never written to the terminal.
-#define CONT_CELL 0xFFFFFFFEu
-
-static VuiCell blank_cell(void)
-{
-    return (VuiCell){ .codepoint = ' ', .style = {0} };
-}
-
-// No real codepoint is this value -- guarantees every cell reads as
-// "changed" on the flush right after create/resize, forcing a full
-// redraw instead of needing a separate first-frame code path.
-static VuiCell sentinel_cell(void)
-{
-    return (VuiCell){ .codepoint = 0xFFFFFFFF, .style = {0} };
-}
 
 static int style_eq(VuiStyle a, VuiStyle b)
 {
     return a.fg == b.fg && a.bg == b.bg && a.attr == b.attr;
 }
 
-static void fill(VuiCell *cells, unsigned int n, VuiCell value)
+static unsigned int intern(VuiScreen *scr, VuiStyle style)
+{
+    if (style_eq(scr->styles[scr->last_style], style)) {
+        return scr->last_style;
+    }
+
+    for (unsigned int i = 0; i < scr->style_count; i++) {
+        if (style_eq(scr->styles[i], style)) {
+            return scr->last_style = i;
+        }
+    }
+
+    if (scr->style_count == MAX_STYLES) {
+        return 0;
+    }
+
+    scr->styles[scr->style_count] = style;
+    return scr->last_style = scr->style_count++;
+}
+
+// Drops the styles nothing on screen uses any more (the back buffer is about to be cleared, so only
+// what the terminal shows matters). Kept ids only move down, so the table is rewritten in place.
+static void compact(VuiScreen *scr, unsigned int n)
+{
+    unsigned char map[MAX_STYLES] = { 0 }; // 0 = unused, else new id + 1 (id 0 always stays)
+
+    for (unsigned int i = 0; i < n; i++) {
+        if (scr->front[i] != SENTINEL) {
+            map[CELL_STYLE(scr->front[i])] = 1;
+        }
+    }
+
+    map[0] = 1;
+    scr->style_count = 0;
+
+    for (unsigned int id = 0; id < MAX_STYLES; id++) {
+        if (map[id]) {
+            scr->styles[scr->style_count] = scr->styles[id];
+            map[id] = (unsigned char)++scr->style_count;
+        }
+    }
+
+    for (unsigned int i = 0; i < n; i++) {
+        if (scr->front[i] != SENTINEL) {
+            scr->front[i] = CELL(CELL_CP(scr->front[i]), map[CELL_STYLE(scr->front[i])] - 1);
+        }
+    }
+
+    scr->last_style = 0;
+}
+
+static void fill(Cell *cells, unsigned int n, Cell value)
 {
     for (unsigned int i = 0; i < n; i++) {
         cells[i] = value;
@@ -52,8 +105,11 @@ VuiScreen *scr_create(unsigned int width, unsigned int height)
 
     scr->width = width;
     scr->height = height;
-    scr->front = malloc(n * sizeof(VuiCell));
-    scr->back = malloc(n * sizeof(VuiCell));
+    scr->front = malloc(n * sizeof(Cell));
+    scr->back = malloc(n * sizeof(Cell));
+    scr->styles[0] = (VuiStyle){0};
+    scr->style_count = 1;
+    scr->last_style = 0;
 
     if (scr->front == NULL || scr->back == NULL) {
         free(scr->front);
@@ -62,8 +118,8 @@ VuiScreen *scr_create(unsigned int width, unsigned int height)
         return NULL;
     }
 
-    fill(scr->front, n, sentinel_cell());
-    fill(scr->back, n, blank_cell());
+    fill(scr->front, n, SENTINEL);
+    fill(scr->back, n, CELL(' ', 0));
     scr->clip = (VuiRect){ 0, 0, width, height };
 
     return scr;
@@ -83,8 +139,8 @@ void scr_destroy(VuiScreen *scr)
 void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height)
 {
     unsigned int n = width * height;
-    VuiCell *front = realloc(scr->front, n * sizeof(VuiCell));
-    VuiCell *back = realloc(scr->back, n * sizeof(VuiCell));
+    Cell *front = realloc(scr->front, n * sizeof(Cell));
+    Cell *back = realloc(scr->back, n * sizeof(Cell));
 
     if (front == NULL || back == NULL) {
         // Leave scr as it was rather than commit to a half-updated
@@ -99,8 +155,8 @@ void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height)
 
     // Old content doesn't map onto the new dimensions in any
     // meaningful way -- force a full redraw instead of reflowing it.
-    fill(scr->front, n, sentinel_cell());
-    fill(scr->back, n, blank_cell());
+    fill(scr->front, n, SENTINEL);
+    fill(scr->back, n, CELL(' ', 0));
     scr->clip = (VuiRect){ 0, 0, width, height };
 }
 
@@ -125,12 +181,12 @@ static int in_clip(const VuiScreen *scr, unsigned int x, unsigned int y)
 // Overwriting half of a wide character must not leave the other half behind.
 static void unglue(VuiScreen *scr, unsigned int x, unsigned int y)
 {
-    VuiCell *row = &scr->back[y * scr->width];
+    Cell *row = &scr->back[y * scr->width];
 
-    if (row[x].codepoint == CONT_CELL && x > 0) {
-        row[x - 1].codepoint = ' ';
-    } else if (x + 1 < scr->width && row[x + 1].codepoint == CONT_CELL) {
-        row[x + 1].codepoint = ' ';
+    if (CELL_CP(row[x]) == CONT_CP && x > 0) {
+        row[x - 1] = CELL(' ', CELL_STYLE(row[x - 1]));
+    } else if (x + 1 < scr->width && CELL_CP(row[x + 1]) == CONT_CP) {
+        row[x + 1] = CELL(' ', CELL_STYLE(row[x + 1]));
     }
 }
 
@@ -147,14 +203,15 @@ void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, Vu
         w = 1;
     }
 
-    VuiCell *row = &scr->back[y * scr->width];
+    Cell *row = &scr->back[y * scr->width];
+    unsigned int id = intern(scr, style);
 
     unglue(scr, x, y);
-    row[x] = (VuiCell){ .codepoint = cp, .style = style };
+    row[x] = CELL(cp, id);
 
     if (w == 2) {
         unglue(scr, x + 1, y);
-        row[x + 1] = (VuiCell){ .codepoint = CONT_CELL, .style = style };
+        row[x + 1] = CELL(CONT_CP, id);
     }
 }
 
@@ -195,7 +252,13 @@ VuiRect scr_clip(VuiScreen *scr, VuiRect clip)
 
 void scr_clear(VuiScreen *scr, VuiStyle style)
 {
-    fill(scr->back, scr->width * scr->height, (VuiCell){ .codepoint = ' ', .style = style });
+    unsigned int n = scr->width * scr->height;
+
+    if (scr->style_count > MAX_STYLES - 32) {
+        compact(scr, n);
+    }
+
+    fill(scr->back, n, CELL(' ', intern(scr, style)));
 }
 
 static int color_depth = 24;
@@ -279,14 +342,15 @@ void scr_flush(VuiScreen *scr)
 
     for (unsigned int y = 0; y < scr->height; y++) {
         for (unsigned int x = 0; x < scr->width; x++) {
-            VuiCell *back = &scr->back[y * scr->width + x];
-            VuiCell *front = &scr->front[y * scr->width + x];
+            Cell *back = &scr->back[y * scr->width + x];
+            Cell *front = &scr->front[y * scr->width + x];
+            VuiStyle style = scr->styles[CELL_STYLE(*back)];
 
-            if (back->codepoint == front->codepoint && style_eq(back->style, front->style)) {
+            if (*back == *front) {
                 continue;
             }
 
-            if (back->codepoint == CONT_CELL) {
+            if (CELL_CP(*back) == CONT_CP) {
                 *front = *back; // the wide character before it already covered this cell
                 continue;
             }
@@ -297,20 +361,20 @@ void scr_flush(VuiScreen *scr)
                 printf("\033[%u;%uH", y + 1, x + 1);
             }
 
-            if (!have_style || !style_eq(back->style, last_style)) {
+            if (!have_style || !style_eq(style, last_style)) {
                 char sgr[64];
-                int n = style_sgr(back->style, sgr, sizeof(sgr));
+                int n = style_sgr(style, sgr, sizeof(sgr));
                 fwrite(sgr, 1, n, stdout);
-                last_style = back->style;
+                last_style = style;
                 have_style = 1;
             }
 
             uint8_t utf8[4];
-            int len = vui_utf8_encode(back->codepoint, utf8);
+            int len = vui_utf8_encode(CELL_CP(*back), utf8);
             fwrite(utf8, 1, len, stdout);
 
             *front = *back;
-            cur_x = x + (back->codepoint != CONT_CELL && x + 1 < scr->width && back[1].codepoint == CONT_CELL ? 2 : 1);
+            cur_x = x + (x + 1 < scr->width && CELL_CP(back[1]) == CONT_CP ? 2 : 1);
             cur_y = y;
         }
     }
