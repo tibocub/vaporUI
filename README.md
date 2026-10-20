@@ -33,8 +33,12 @@ example (or extend one).
 - `text-input`: single-line input fields
 - `text-area`: multi-line editor (selection, clipboard, wrap, undo)
 - `auto-sizing`: content-based sizing, labels
+- `windows`: floating windows, modal dialog, drop-down, bars, scrolling, timers, themes
+- `colors`: 16/256/truecolor, justify and align
+- `picker`: fzf-like fuzzy finder (virtual list, `/dev/tty` UI when piped)
+- `event-loop`: timers and a watched child-process pipe next to the keyboard
 
-`make test` runs the automated checks (`tests/`): the input decoder.
+`make test` runs the automated checks (`tests/`): the input decoder, widgets, layout, overlays, timers and fd watches.
 `tests/screen.py build/<example> ROWS COLS -- '\t' 'text' ...` runs an example in a pty, sends keys/mouse
 sequences, and prints the rendered screen (needs `pip install pyte`).
 
@@ -48,23 +52,25 @@ VaporUI API:
 - [x] resize events
 - [x] UTF-8 parser
 - [x] VT parser
-- [WIP] styling (bold/underline/colors/background etc.)
-- [ ] theming
+- [x] styling (bold/underline/reverse, colors)
+- [x] theming (`vui_theme()`)
+- [x] event loop: fd watches, timers, `vui_run`
 
 Rendering:
 - [x] cell buffer (double-buffered, diffed against what's on screen)
 - [x] basic styling (8 ANSI colors, bold/underline/reverse)
 - [x] wide/double-width character support (CJK, emoji table)
-- [ ] 256-color / truecolor
+- [x] 256-color / truecolor (approximated down on terminals with less)
 
 Layout:
 - [x] element tree (node_create/add/remove/destroy)
 - [x] flexbox subset: direction, basis/grow/shrink, gap, uniform padding
 - [x] wired to the renderer (node_draw walks the tree, draw callbacks get their node's computed rect)
-- [ ] cross-axis alignment (currently stretch-only, no start/center/end)
-- [ ] justify-content variants (currently packed-from-start + gap only)
+- [x] cross-axis alignment (stretch / start / center / end)
+- [x] justify (start / center / end / between)
+- [x] scrolling containers
 - [x] content-based sizing (`VUI_AUTO`, per-node `measure`; main axis only)
-- [ ] per-side padding (currently uniform only)
+- [x] per-side padding (`node_pad`)
 - [x] draw callbacks are clipped to their node's rect
 
 Controls:
@@ -83,10 +89,12 @@ POSIX backend (linux/macOS/BSD/NuttX):
 - [x] termios raw input/output
 
 VaporUI widgets:
-- [ ] floating window
-- [ ] popup
-- [ ] drop-down
-- [ ] bar (maybe distinct menubar/status bar widgets)
+- [x] floating window (overlays: z-order, modal, dismiss; movable, resizable `window`)
+- [x] popup (overlay with `VUI_OVERLAY_DISMISS`)
+- [x] drop-down
+- [x] bar (status bar; a menu bar with dropdown menus is still to do)
+- [x] scroll container, virtual list
+- [ ] menu bar / context menu
 - [x] border
 - [x] div
 - [x] push button

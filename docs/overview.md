@@ -13,6 +13,8 @@ VuiNode *root = node_create();             // build a tree: node_add(parent, chi
 node_add(root, &button_create("OK", on_ok)->node);
 
 vui_set_focus(ui, first_focusable);
+vui_run(ui, root, handler, NULL);          // render, wait, handler(), vui_dispatch, until vui_quit(ui)
+// ...or write the loop yourself when you need control over it:
 for (;;) {
     vui_render(ui, root);                  // layout over the whole terminal + draw + flush
     VuiEvent e;
@@ -36,12 +38,13 @@ tree  -> node_layout (node.c)    -> node->rect -> node_draw -> scr_set (screen.c
 | File | Role |
 |------|------|
 | `include/vaporui.h` | The whole public API |
-| `src/vaporui.c`, `src/ctx.h` | Context (size, screen, focus, hover), init/shutdown/poll |
+| `src/vaporui.c`, `src/ctx.h` | Context (size, screen, focus, hover, overlays), init/shutdown, poll + fd watches + timers |
 | `src/platform/posix.c` | Backend: termios raw mode, SIGWINCH, poll/read, terminal mode switches. The only platform-specific file |
 | `src/utf8.c`, `src/vt.c`, `src/input.c` | Byte -> UTF-8 -> escape sequences -> events (see `input.md`) |
 | `src/screen.c` | Front/back cell buffers, diff flush, clip rect, SGR output |
 | `src/node.c` | Tree, flexbox layout, clipped draw |
-| `src/focus.c` | Focus, Tab traversal, hit testing, hover, event bubbling |
+| `src/focus.c` | Focus, Tab traversal, hit testing, hover, event bubbling, overlays, `vui_run` |
+| `src/theme.c` | The shared theme (`vui_theme()`) the widgets draw with |
 | `src/clipboard.c` | In-process clipboard + hook to the terminal's (OSC 52) |
 | `src/controls.c` | Flat key -> action table for app-wide shortcuts |
 | `src/widgets/*.c` | One file per widget |
@@ -49,9 +52,46 @@ tree  -> node_layout (node.c)    -> node->rect -> node_draw -> scr_set (screen.c
 ## Layout in one paragraph
 
 Every node has `direction` (row/column), and along its parent's main axis `basis`, `grow`, `shrink`;
-plus `gap` and uniform `padding` for its children. Cross axis always stretches. `basis = VUI_AUTO`
-sizes a node from its content (see `widgets.md`). `node->rect` is filled by `node_layout`
-and is what draw callbacks and hit testing use.
+plus `gap` and per-side padding (`node_pad(n, top, right, bottom, left)`) for its children.
+`justify` places children along the main axis (start / center / end / between) and `align` across it
+(stretch by default; start / center / end size the child from its content). `basis = VUI_AUTO`
+sizes a node from its content (see `widgets.md`). A node with `scrolls = 1` lets its children keep
+their size and shifts them by `scroll` (the `scroll_create` widget wraps this). `node->rect` is filled
+by `node_layout` and is what draw callbacks and hit testing use; its x/y are signed because scrolled
+content can sit above the screen.
+
+## The event loop
+
+`vui_poll_event` also waits on extra sources and runs their callbacks, then returns
+`VUI_EVENT_WAKE` so you redraw:
+
+- `vui_watch_fd(ui, fd, cb, userdata)` / `vui_unwatch_fd`: a pty or pipe of a child process, a socket. The callback
+  fires while the fd is readable (or hung up: `read()` returns 0: unwatch it).
+- `vui_timer(ui, ms, repeat, cb, userdata)` / `vui_timer_cancel`.
+- Up to 16 of each. Callbacks run on the polling thread and may add or remove watches and timers.
+
+`examples/event-loop.c` has both next to the keyboard.
+
+## Overlays (windows, popups, dialogs)
+
+`vui_overlay_add(ui, node, rect, flags)` puts a tree on top of the root, in z-order (last added =
+topmost, at most 8): `rect` is where it sits (a 0 width/height means "measure it"); change `node->rect`
+later to move it. The ui owns it from then on: `vui_overlay_remove(ui, any_node_inside)` unlinks it
+immediately and frees it before the next render/dispatch, so a button can close its own dialog.
+`vui_ctx()` returns the ui for callbacks that don't receive one.
+
+- `VUI_OVERLAY_MODAL`: only this overlay gets input; Tab stays inside it.
+- `VUI_OVERLAY_DISMISS`: Escape, or a click outside, removes it (the click is swallowed).
+- Without flags it is a plain window: clicking raises it and moves focus into it, Tab visits the root then every overlay.
+  Focus returns to where it was when an overlay closes. `node->active` is set on the topmost overlay (windows use it to light their title bar).
+- `window_create`, `dropdown_create` build on this; `examples/windows.c` shows them.
+
+## Theme
+
+`vui_theme()` returns the one `VuiTheme` the built-in widgets draw with (text, focus, hover, selection, border, window
+titles, popup, bar, scrollbar). Assign to its fields once at startup to restyle everything, including
+the background: `text` is what the screen and containers are cleared with. Colors are 16 ANSI, `VUI_COLOR256(n)` or
+`VUI_RGB(r, g, b)`; the ones the terminal can't show are approximated (`COLORTERM`/`TERM` pick the depth, `vui_set_color_depth` overrides).
 
 ## Events and focus
 
@@ -81,7 +121,7 @@ c->node.draw = draw; c->node.on_event = on_event; c->node.focusable = 1;
 
 `make` builds all examples to `build/`; each one's header comment lists what to verify by hand, and
 all of them must keep working. `make test` runs `tests/input.c` (decoder) and `tests/widgets.c`
-(widget logic, no terminal needed). `tests/screen.py` runs an example in a pty and prints the
+(widget logic, layout, overlays, timers and fd watches against a stub backend, no terminal needed). `tests/screen.py` runs an example in a pty and prints the
 rendered screen (`pip install pyte`), which is how most of this was checked without a human:
 
     python3 tests/screen.py build/text-input 12 50 -- 'hello' '\t' '\x1b[<0;5;3M'

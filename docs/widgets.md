@@ -10,18 +10,24 @@ All created with `xxx_create(...)`, which returns a struct whose first member is
 `VUI_AUTO` as a basis means "as big as my content": content widgets (label, button, checklist,
 input) default to it and measure themselves (`node.measure`); a container with an `VUI_AUTO` basis
 measures its children (sum along its direction + gaps, max across, + padding). Plain nodes default to
-basis 0, so they only get space from `grow`. Cross-axis size is always stretch. Space nobody grows
-into stays empty. Custom nodes set `measure` to take part.
+basis 0, so they only get space from `grow`. Cross-axis size stretches unless the parent sets `align`. Space nobody grows
+into stays empty unless the parent sets `justify`. Custom nodes set `measure` to take part.
 
 | Widget | Create | Behaviour |
 |--------|--------|-----------|
 | `VuiLabel` | `label_create(text)` | Static text, `\n` separates lines, `style` |
 | `VuiDiv` | `div_create(dir)` | Container that paints `style` as background |
 | `VuiBorder` | `border_create(title)` | Frame (`border` = single/rounded/double, `style`, optional title); children go inside (padding 1) |
-| `VuiButton` | `button_create(label, on_click)` | Focusable; Enter / Space / left click (on press) calls `on_click(&button->node)`. The whole rect is filled: dark normally, blue when hovered, reversed when focused |
+| `VuiButton` | `button_create(label, on_click)` | Focusable; Enter / Space / left click (on press) calls `on_click(&button->node)`. The whole rect is filled in the theme's `text`, `hover` (pointer over it) or `focus` style |
 | `VuiChecklist` | `checklist_create(items, count, radio)` | Up/Down/Home/End move, Space/Enter/click toggle; `radio` keeps exactly one item selected. Scrolls. Read `checked[i]`, get changes via `on_change(list, index)`. Hovered row is highlighted |
 | `VuiInput` | `input_create(max_chars)` | Single-line text field, fixed capacity. See `vaporui.h` for the keys. `input_set_text`, `input_get_text`, `on_change`, `on_submit` |
 | `VuiTextarea` | `textarea_create(max_chars)` | Multi-line editor on one growing buffer (0 = unlimited): selection (Shift+nav, mouse drag), clipboard, word wrap (`wrap`, default on), wide characters, undo/redo, optional `auto_indent`. Tab inserts spaces and the node sets `wants_tab`, so **Shift-Tab / Ctrl-Tab** leave it. `textarea_set_text/get_text/get_selection/select_all/undo/redo/cursor_pos`, `on_change`. Key list in `vaporui.h` |
+
+| `VuiList` | `list_create(count, item)` | Virtual list: row text comes from `item(list, i)` when drawn, so any amount of data, nothing copied. Up/Down/PageUp/PageDown/Home/End, wheel, click. `on_select` (Enter / click), `on_cursor`. After the data changes call `list_set_count`; `list_set_cursor` moves the cursor |
+| scroll container | `scroll_create()` (a plain `VuiNode`) | Children keep their natural size and scroll: wheel, arrows / PageUp / PageDown / Home / End when no child takes them, a clickable scrollbar; focusing a child scrolls it into view. Give children a `basis` (or `VUI_AUTO` content) |
+| `VuiWindow` | `window_create(title)` | A DOS-style frame for an overlay: drag the title bar, resize from the bottom-right corner, `[x]` closes (`on_close`, else it removes itself). The top window has the `title` style, the others `title_off` |
+| `VuiDropdown` | `dropdown_create(items, count, on_change)` | One-line selector; Enter / Space / Down / click opens a popup list (an overlay that dismisses on Escape or an outside click). `selected` holds the choice |
+| bar | `bar_create()` (a `VuiDiv`) | One row in the theme's `bar` style, gap 1: put labels in it (give them `style = vui_theme()->bar`) for status or menu bars |
 
 Callbacks receive the widget's `VuiNode *`; use `node->userdata` for your own state.
 
