@@ -4,6 +4,7 @@ Current limits, in one place. Update this file when one is lifted.
 
 **Rendering**
 - Colors beyond the terminal's depth are approximated (truecolor -> 256 -> 16 by nearest cube / bit thresholds, not perceptual). No italic, strikethrough, dim, blink or underline colors.
+- At most 255 distinct styles on screen at once (a gradient-heavy app can hit it; extras draw with the default style).
 - The theme is one global; widgets read it when they draw (zero `VuiStyle` fields in widget structs mean "terminal default", not "theme": copy from `vui_theme()` yourself).
 - Wide characters use a compact width table (CJK, fullwidth, common emoji = 2; combining marks = 0, and
   they are dropped, not overlaid). Terminals disagree on some emoji / ZWJ sequences: those can misalign.
@@ -39,7 +40,7 @@ terminal's settings. Keep essential app keys off those combinations.
 the kitty protocol; no X10 mouse; no focus events; the Escape key has a 25 ms disambiguation delay.
 
 **Platforms**
-- Backends: POSIX (Linux/macOS/BSD; NuttX untested) and Windows (`src/platform/win32.c`, VT console mode; cross-built with
+- Backends: POSIX (Linux/macOS/BSD; NuttX on an RP2040, see `small-targets.md`) and Windows (`src/platform/win32.c`, VT console mode; cross-built with
   `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`). The Windows one has only been compiled and run under Wine (input loop, Ctrl-C and the pipe watch
   verified; Wine's console doesn't render VT faithfully, so the drawing is unverified), not run on a real Windows console.
   Windows differences: fd watches work for CRT fds that are pipes (polled every 10 ms while any is watched; sockets can't be watched; other kinds always report ready), `event-loop` isn't built (fork / pipe / SIGCHLD). `make wintest` + wine checks the pipe watch.
