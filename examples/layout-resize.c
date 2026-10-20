@@ -31,7 +31,7 @@ static void draw_pane(VuiNode *node, VuiScreen *scr, void *userdata)
         }
     }
 
-    snprintf(line, sizeof(line), "%s %ux%u @%u,%u", pane->name, r.width, r.height, r.x, r.y);
+    snprintf(line, sizeof(line), "%s %ux%u @%d,%d", pane->name, r.width, r.height, r.x, r.y);
 
     // draw callbacks aren't clipped yet: truncate by hand
     for (unsigned int i = 0; line[i] != '\0' && i < r.width && r.height > 0; i++) {
@@ -84,7 +84,7 @@ int main(void)
     middle->direction = VUI_DIR_COLUMN;
     middle->grow = 2;
     middle->gap = 1;
-    middle->padding = 1;
+    node_pad(middle, 1, 1, 1, 1);
     node_add(middle, pane_node(&top, 1, 0));
     node_add(middle, pane_node(&bottom, 1, 0));
     node_add(body, middle);

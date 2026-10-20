@@ -59,7 +59,7 @@ static void move_focus(VuiCtx *ui, VuiNode *root, int backward)
 
 static int contains(VuiRect r, unsigned int x, unsigned int y)
 {
-    return x >= r.x && y >= r.y && x - r.x < r.width && y - r.y < r.height;
+    return (int)x >= r.x && (int)y >= r.y && (int)x - r.x < (int)r.width && (int)y - r.y < (int)r.height;
 }
 
 // Deepest node under the point; later siblings are drawn on top.

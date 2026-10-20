@@ -13,10 +13,10 @@ a TUI program and vice-versa (once the TUI part
 is stable).
 
 ## Docs
-- `docs/overview.md`: how an app is built, the pipeline, file map, custom nodes, testing
-- `docs/input.md`: events, what terminals can send, AZERTY/non-QWERTY notes, mouse
-- `docs/widgets.md`: widget reference and conventions for adding one
-- `docs/limitations.md`: everything that doesn't work yet, in one place
+- [overview.md](docs/overview.md): how an app is built, the pipeline, file map, custom nodes, testing
+- [input.md](docs/input.md): events, what terminals can send, AZERTY/non-QWERTY notes, mouse
+- [widgets.md](docs/widgets.md): widget reference and conventions for adding one
+- [limitations.md](docs/limitations.md): everything that doesn't work yet, in one place
 
 ## Examples and tests
 `make` builds every `examples/*.c` into `build/`. They are both the

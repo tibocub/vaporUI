@@ -291,6 +291,40 @@ int main(void)
     node_destroy(&lab->node);
     node_destroy(row);
 
+    // justify / align / per-side padding
+    row = node_create();
+    b1 = button_create("OK", NULL); b2 = button_create("Cancel", NULL);
+    node_add(row, &b1->node);
+    node_add(row, &b2->node);
+    row->justify = VUI_JUSTIFY_END;
+    node_layout(row, (VuiRect){ 0, 0, 40, 3 });
+    assert(b1->node.rect.x == 24 && b2->node.rect.x == 30);
+    row->justify = VUI_JUSTIFY_CENTER;
+    node_layout(row, (VuiRect){ 0, 0, 40, 3 });
+    assert(b1->node.rect.x == 12);
+    row->justify = VUI_JUSTIFY_BETWEEN;
+    node_layout(row, (VuiRect){ 0, 0, 40, 3 });
+    assert(b1->node.rect.x == 0 && b2->node.rect.x + b2->node.rect.width == 40);
+    row->justify = VUI_JUSTIFY_START;
+    assert(b1->node.rect.height == 3);
+    row->align = VUI_ALIGN_CENTER;
+    node_pad(row, 1, 2, 0, 3);
+    node_layout(row, (VuiRect){ 0, 0, 40, 5 });
+    assert(b1->node.rect.x == 3 && b1->node.rect.y == 1 + (4 - 1) / 2 && b1->node.rect.height == 1);
+    node_destroy(row);
+
+    // scrolling container: children keep their size, scroll shifts them and is clamped
+    VuiNode *sc = node_create();
+    sc->direction = VUI_DIR_COLUMN;
+    sc->scrolls = 1;
+    for (int i = 0; i < 10; i++) { VuiNode *c = node_create(); c->basis = 2; node_add(sc, c); }
+    node_layout(sc, (VuiRect){ 0, 0, 10, 6 });
+    assert(sc->content == 20 && sc->children[9]->rect.y == 18 && sc->children[9]->rect.height == 2);
+    sc->scroll = 100;
+    node_layout(sc, (VuiRect){ 0, 0, 10, 6 });
+    assert(sc->scroll == 14 && sc->children[9]->rect.y == 4 && sc->children[0]->rect.y == -14);
+    node_destroy(sc);
+
     puts("widgets: ok");
     return 0;
 }

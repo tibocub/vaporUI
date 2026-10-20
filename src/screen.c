@@ -118,8 +118,8 @@ static int in_clip(const VuiScreen *scr, unsigned int x, unsigned int y)
 {
     VuiRect c = scr->clip;
 
-    return x < scr->width && y < scr->height && x >= c.x && y >= c.y
-        && x - c.x < c.width && y - c.y < c.height;
+    return x < scr->width && y < scr->height && (int)x >= c.x && (int)y >= c.y
+        && (int)x - c.x < (int)c.width && (int)y - c.y < (int)c.height;
 }
 
 // Overwriting half of a wide character must not leave the other half behind.

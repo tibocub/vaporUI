@@ -10,7 +10,7 @@ VuiNode *node_alloc(size_t size)
         return NULL;
     }
 
-    node->shrink = 1; // CSS flex-shrink defaults to 1; grow/basis/gap/padding default to 0
+    node->shrink = 1; // CSS flex-shrink defaults to 1; grow/basis/gap/padding default to 0, justify START, align STRETCH
 
     return node;
 }
@@ -79,6 +79,14 @@ void node_remove(VuiNode *child)
     }
 }
 
+void node_pad(VuiNode *node, unsigned int top, unsigned int right, unsigned int bottom, unsigned int left)
+{
+    node->pad_top = top;
+    node->pad_right = right;
+    node->pad_bottom = bottom;
+    node->pad_left = left;
+}
+
 static unsigned int sub(unsigned int a, unsigned int b)
 {
     return a > b ? a - b : 0;
@@ -86,16 +94,16 @@ static unsigned int sub(unsigned int a, unsigned int b)
 
 unsigned int node_measure(VuiNode *node, int row)
 {
-    unsigned int pad2 = node->padding * 2, total = 0;
+    unsigned int pad = row ? node->pad_left + node->pad_right : node->pad_top + node->pad_bottom, total = 0;
     int along = (node->direction == VUI_DIR_ROW) == (row != 0);
 
     if (node->measure != NULL) {
-        return node->measure(node, row) + pad2;
+        return node->measure(node, row) + pad;
     }
 
     for (unsigned int i = 0; i < node->child_count; i++) {
         VuiNode *c = node->children[i];
-        unsigned int size = c->basis == VUI_AUTO ? node_measure(c, row) : c->basis;
+        unsigned int size = along && c->basis != VUI_AUTO ? c->basis : node_measure(c, row);
 
         total = along ? total + size : (size > total ? size : total);
     }
@@ -104,7 +112,7 @@ unsigned int node_measure(VuiNode *node, int row)
         total += node->gap * (node->child_count - 1);
     }
 
-    return total + pad2;
+    return total + pad;
 }
 
 void node_layout(VuiNode *node, VuiRect rect)
@@ -115,11 +123,12 @@ void node_layout(VuiNode *node, VuiRect rect)
         return;
     }
 
-    unsigned int pad2 = node->padding * 2;
-    unsigned int inner_x = rect.x + node->padding;
-    unsigned int inner_y = rect.y + node->padding;
-    unsigned int inner_w = sub(rect.width, pad2);
-    unsigned int inner_h = sub(rect.height, pad2);
+    unsigned int pad_w = node->pad_left + node->pad_right;
+    unsigned int pad_h = node->pad_top + node->pad_bottom;
+    int inner_x = rect.x + (int)node->pad_left;
+    int inner_y = rect.y + (int)node->pad_top;
+    unsigned int inner_w = sub(rect.width, pad_w);
+    unsigned int inner_h = sub(rect.height, pad_h);
 
     int row = (node->direction == VUI_DIR_ROW);
     unsigned int main_size = row ? inner_w : inner_h;
@@ -132,14 +141,15 @@ void node_layout(VuiNode *node, VuiRect rect)
     float grow_sum = 0;
     float shrink_basis_sum = 0; // CSS weighs shrink by shrink*basis, not shrink alone
 
-    unsigned int *sizes = malloc(node->child_count * 2 * sizeof(unsigned int));
-    unsigned int *bases;
+    unsigned int *sizes = malloc(node->child_count * 3 * sizeof(unsigned int));
+    unsigned int *bases, *cross;
 
     if (sizes == NULL) {
         return;
     }
 
     bases = sizes + node->child_count;
+    cross = bases + node->child_count;
 
     for (unsigned int i = 0; i < node->child_count; i++) {
         VuiNode *c = node->children[i];
@@ -147,6 +157,30 @@ void node_layout(VuiNode *node, VuiRect rect)
         basis_sum += bases[i];
         grow_sum += c->grow;
         shrink_basis_sum += c->shrink * (float)bases[i];
+
+        cross[i] = cross_size;
+
+        if (node->align != VUI_ALIGN_STRETCH) {
+            unsigned int natural = node_measure(c, !row);
+
+            cross[i] = natural < cross_size ? natural : cross_size;
+        }
+    }
+
+    // A scrolling container never squeezes its children into the viewport
+    if (node->scrolls && basis_sum > avail) {
+        node->content = basis_sum + total_gap + (row ? pad_w : pad_h);
+        avail = basis_sum;
+    } else {
+        node->content = main_size + (row ? pad_w : pad_h);
+    }
+
+    if (node->scrolls) {
+        unsigned int max = sub(node->content, row ? rect.width : rect.height);
+
+        if (node->scroll > max) {
+            node->scroll = max;
+        }
     }
 
     int diff = (int)avail - (int)basis_sum;
@@ -171,21 +205,34 @@ void node_layout(VuiNode *node, VuiRect rect)
     // Float distribution above can leave the row/column a cell or two
     // short of `avail` from rounding -- hand the remainder to the
     // last child so the total always fills exactly. Only when something
-    // grows: otherwise the leftover space stays empty.
+    // grows: otherwise the leftover space stays empty (see justify).
     if (used < avail && diff > 0 && grow_sum > 0) {
         sizes[node->child_count - 1] += avail - used;
+        used = avail;
     }
 
-    unsigned int cursor = row ? inner_x : inner_y;
+    unsigned int free_space = sub(avail, used), gap = node->gap;
+    int cursor = (row ? inner_x : inner_y) - (int)node->scroll;
+
+    switch (node->justify) {
+    case VUI_JUSTIFY_CENTER: cursor += free_space / 2; break;
+    case VUI_JUSTIFY_END:    cursor += free_space; break;
+    case VUI_JUSTIFY_BETWEEN:
+        if (node->child_count > 1) gap += free_space / (node->child_count - 1);
+        break;
+    default: break;
+    }
 
     for (unsigned int i = 0; i < node->child_count; i++) {
         VuiNode *c = node->children[i];
+        unsigned int spare = cross_size - cross[i];
+        int offset = node->align == VUI_ALIGN_CENTER ? spare / 2 : node->align == VUI_ALIGN_END ? spare : 0;
         VuiRect child_rect = row
-            ? (VuiRect){ .x = cursor, .y = inner_y, .width = sizes[i], .height = cross_size }
-            : (VuiRect){ .x = inner_x, .y = cursor, .width = cross_size, .height = sizes[i] };
+            ? (VuiRect){ .x = cursor, .y = inner_y + offset, .width = sizes[i], .height = cross[i] }
+            : (VuiRect){ .x = inner_x + offset, .y = cursor, .width = cross[i], .height = sizes[i] };
 
         node_layout(c, child_rect);
-        cursor += sizes[i] + node->gap;
+        cursor += sizes[i] + gap;
     }
 
     free(sizes);
@@ -194,22 +241,24 @@ void node_layout(VuiNode *node, VuiRect rect)
 void node_draw(VuiNode *node, VuiScreen *scr)
 {
     VuiRect outer = scr_clip(scr, (VuiRect){0});
-    unsigned int x0 = node->rect.x > outer.x ? node->rect.x : outer.x;
-    unsigned int y0 = node->rect.y > outer.y ? node->rect.y : outer.y;
-    unsigned int x1 = node->rect.x + node->rect.width;
-    unsigned int y1 = node->rect.y + node->rect.height;
+    int x0 = node->rect.x > outer.x ? node->rect.x : outer.x;
+    int y0 = node->rect.y > outer.y ? node->rect.y : outer.y;
+    int x1 = node->rect.x + (int)node->rect.width;
+    int y1 = node->rect.y + (int)node->rect.height;
 
-    if (x1 > outer.x + outer.width) x1 = outer.x + outer.width;
-    if (y1 > outer.y + outer.height) y1 = outer.y + outer.height;
+    if (x1 > outer.x + (int)outer.width) x1 = outer.x + (int)outer.width;
+    if (y1 > outer.y + (int)outer.height) y1 = outer.y + (int)outer.height;
 
-    scr_clip(scr, (VuiRect){ x0, y0, sub(x1, x0), sub(y1, y0) });
+    if (x1 > x0 && y1 > y0) { // fully scrolled-out or clipped-out nodes draw nothing
+        scr_clip(scr, (VuiRect){ x0, y0, x1 - x0, y1 - y0 });
 
-    if (node->draw != NULL) {
-        node->draw(node, scr, node->userdata);
-    }
+        if (node->draw != NULL) {
+            node->draw(node, scr, node->userdata);
+        }
 
-    for (unsigned int i = 0; i < node->child_count; i++) {
-        node_draw(node->children[i], scr);
+        for (unsigned int i = 0; i < node->child_count; i++) {
+            node_draw(node->children[i], scr);
+        }
     }
 
     scr_clip(scr, outer);

@@ -120,9 +120,10 @@ VuiEvent vui_poll_event(VuiCtx *ui);
 // shim that emits it) works without a backend change.
 void vui_set_mouse(VuiCtx *ui, int level);
 
+// x/y are signed: scrolled content can sit above or left of the screen.
 typedef struct {
-    unsigned int x;
-    unsigned int y;
+    int x;
+    int y;
     unsigned int width;
     unsigned int height;
 } VuiRect;
@@ -194,15 +195,13 @@ void scr_flush(VuiScreen *scr);
 // -- Element tree / layout --
 //
 // A flexbox subset: direction + basis/grow/shrink/gap along the main
-// axis, uniform padding, and cross-axis stretch (the only cross-axis
-// behavior for now -- no align-items variants yet). No content-based
-// sizing either -- basis is whatever the app sets, since there's no
-// text-measurement system yet to size a node from its content.
+// axis, per-side padding, `justify` (main axis) and `align` (cross axis)
+// placement, content-based sizing (VUI_AUTO), and scrolling.
 //
 // Node is a plain struct, not opaque: set direction/grow/shrink/
-// basis/gap/padding/draw/userdata directly. Only child-list membership
-// goes through node_add/node_remove, since those keep the children
-// array and parent pointer consistent.
+// basis/gap/draw/userdata directly (padding through node_pad). Only
+// child-list membership goes through node_add/node_remove, since those
+// keep the children array and parent pointer consistent.
 
 typedef enum {
     VUI_DIR_ROW,
@@ -221,15 +220,42 @@ typedef int (*VuiOnEvent)(VuiNode *node, VuiCtx *ui, const VuiEvent *event);
 // basis value meaning "as big as my content": see node->measure
 #define VUI_AUTO ((unsigned int)-1)
 
+// What to do with the main-axis space the children leave unused.
+typedef enum {
+    VUI_JUSTIFY_START,
+    VUI_JUSTIFY_CENTER,
+    VUI_JUSTIFY_END,
+    VUI_JUSTIFY_BETWEEN // first child at the start, last at the end, even gaps between
+} VuiJustify;
+
+// Where children sit on the cross axis. Anything but STRETCH sizes the
+// child from its content (like VUI_AUTO).
+typedef enum {
+    VUI_ALIGN_STRETCH,
+    VUI_ALIGN_START,
+    VUI_ALIGN_CENTER,
+    VUI_ALIGN_END
+} VuiAlign;
+
 struct VuiNode {
     VuiDirection direction;
+    VuiJustify justify;
+    VuiAlign align;
 
     float grow;
     float shrink;
     unsigned int basis; // size along the parent's main axis; VUI_AUTO sizes from content
 
     unsigned int gap;
-    unsigned int padding;
+    unsigned int pad_top, pad_right, pad_bottom, pad_left; // set with node_pad()
+
+    // A scrolling container lets its children keep their natural size
+    // along the main axis (no shrinking) and shifts them by `scroll`
+    // cells; layout clamps it to [0, content - viewport]. `content` is the
+    // main-axis size of everything inside, padding included.
+    int scrolls;
+    unsigned int scroll;
+    unsigned int content;
 
     VuiRect rect; // written by node_layout(), read by draw callbacks
 
@@ -259,6 +285,7 @@ VuiNode *node_create(void);
 VuiNode *node_alloc(size_t size);
 void node_destroy(VuiNode *node); // frees the whole subtree
 
+void node_pad(VuiNode *node, unsigned int top, unsigned int right, unsigned int bottom, unsigned int left);
 void node_add(VuiNode *parent, VuiNode *child);
 void node_remove(VuiNode *child);
 
