@@ -13,7 +13,7 @@
 //   - the "Wrap" button toggles wrapping; without it long lines scroll sideways
 //   - the status shows line:column, selection size and character count
 //   - Shift-Tab leaves the editor (Tab is the editor's); wheel scrolls; click places the cursor
-//   - Ctrl-Q quits
+//   - Ctrl-Q / Ctrl-C quits
 
 #include <stdio.h>
 
@@ -33,7 +33,7 @@ static void draw_status(VuiNode *node, VuiScreen *scr, void *userdata)
     textarea_cursor_pos(app->ta, &line, &col);
     unsigned int sel = app->ta->cursor > app->ta->anchor ? app->ta->cursor - app->ta->anchor : app->ta->anchor - app->ta->cursor;
 
-    snprintf(buf, sizeof(buf), "line %u, col %u   %u selected   %u chars   Ctrl-Q quits", line + 1, col + 1, sel, app->ta->len);
+    snprintf(buf, sizeof(buf), "line %u, col %u   %u selected   %u chars   Ctrl-Q / Ctrl-C quits", line + 1, col + 1, sel, app->ta->len);
     scr_puts(scr, node->rect.x, node->rect.y, buf, (VuiStyle){ .attr = VUI_ATTR_BOLD });
 }
 
@@ -72,6 +72,7 @@ int main(void)
 
     VuiControls *global = ctl_create();
     ctl_bind(global, VUI_KEY_CHAR, VUI_MOD_CTRL, 'q', act_quit, &app);
+    ctl_bind(global, VUI_KEY_CHAR, VUI_MOD_CTRL, 'c', act_quit, &app); // only reached when nothing is selected
 
     VuiNode *root = node_create();
     root->direction = VUI_DIR_COLUMN;
@@ -124,11 +125,10 @@ int main(void)
             break;
         }
 
-        if (event.type == VUI_EVENT_KEY && ctl_dispatch(global, ui, &event.key)) {
-            continue;
+        // widgets first (Ctrl-C copies a selection), then the global keys
+        if (!vui_dispatch(ui, root, &event) && event.type == VUI_EVENT_KEY) {
+            ctl_dispatch(global, ui, &event.key);
         }
-
-        vui_dispatch(ui, root, &event);
     }
 
     node_destroy(root);
