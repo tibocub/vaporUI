@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,8 @@
 static void osc52_copy(const char *utf8);
 
 static struct termios original_termios;
+static int tty_fd = STDIN_FILENO;   // the terminal: stdin, or /dev/tty when stdin is piped
+static FILE *saved_stdout;          // the real stdout while the UI draws on /dev/tty
 static volatile sig_atomic_t resize_pending = 0;
 static VuiInputDecoder input_decoder;
 
@@ -34,12 +37,41 @@ static void handle_sigwinch(int signal)
     resize_pending = 1;
 }
 
+static void release_tty(void)
+{
+    if (saved_stdout != NULL) {
+        fclose(stdout);
+        close(tty_fd);
+        stdout = saved_stdout;
+        saved_stdout = NULL;
+        tty_fd = STDIN_FILENO;
+    }
+}
+
 int vui_platform_init(void)
 {
     struct termios raw;
     struct sigaction action;
 
-    if (tcgetattr(STDIN_FILENO, &original_termios) == -1) {
+    // Filters (`find | picker`): keys come from the terminal, not the pipe, and the
+    // UI is drawn on the terminal, leaving stdout free for the program's result.
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
+        FILE *out;
+
+        tty_fd = open("/dev/tty", O_RDWR);
+        out = tty_fd >= 0 ? fdopen(dup(tty_fd), "w") : NULL;
+
+        if (out == NULL) {
+            return -1;
+        }
+
+        saved_stdout = stdout;
+        fflush(stdout);
+        stdout = out;
+    }
+
+    if (tcgetattr(tty_fd, &original_termios) == -1) {
+        release_tty();
         return -1;
     }
 
@@ -56,7 +88,8 @@ int vui_platform_init(void)
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
 
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
+    if (tcsetattr(tty_fd, TCSAFLUSH, &raw) == -1) {
+        release_tty();
         return -1;
     }
 
@@ -65,7 +98,8 @@ int vui_platform_init(void)
     action.sa_flags = 0;
 
     if (sigaction(SIGWINCH, &action, NULL) == -1) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
+        tcsetattr(tty_fd, TCSAFLUSH, &original_termios);
+        release_tty();
         return -1;
     }
 
@@ -94,10 +128,12 @@ void vui_platform_shutdown(void)
     fflush(stdout);
 
     tcsetattr(
-        STDIN_FILENO,
+        tty_fd,
         TCSAFLUSH,
         &original_termios
     );
+
+    release_tty();
 }
 
 static void osc52_copy(const char *utf8)
@@ -143,7 +179,7 @@ int vui_platform_get_size(VuiSize *size)
         return -1;
     }
 
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1) {
+    if (ioctl(tty_fd, TIOCGWINSZ, &ws) == -1) {
         return -1;
     }
 
@@ -195,7 +231,7 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return event;
     }
 
-    pfd[0].fd = STDIN_FILENO;
+    pfd[0].fd = tty_fd;
     pfd[0].events = POLLIN;
 
     for (unsigned int i = 0; i < n; i++) {
@@ -237,7 +273,7 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return result == 0 && esc_first ? vui_input_timeout(&input_decoder) : event;
     }
 
-    if (read(STDIN_FILENO, &c, 1) <= 0) {
+    if (read(tty_fd, &c, 1) <= 0) {
         return event;
     }
 

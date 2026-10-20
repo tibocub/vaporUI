@@ -1,6 +1,6 @@
 # Drives an example in a pty and prints the rendered screen (needs `pip install pyte`).
 # usage: pty.py build/example [rows cols] -- key1 key2 ...   (keys use python escapes, e.g. '\x1b[<0;5;5M')
-import os, pty, select, struct, fcntl, termios, sys, pyte, codecs
+import os, pty, select, struct, fcntl, termios, sys, pyte, codecs, time
 
 def run(exe, keys, rows=24, cols=80, wait=0.3):
     pid, fd = pty.fork()
@@ -10,7 +10,8 @@ def run(exe, keys, rows=24, cols=80, wait=0.3):
     scr = pyte.Screen(cols, rows)
     st = pyte.ByteStream(scr)
     def rd(t):
-        while select.select([fd], [], [], t)[0]:
+        end = time.time() + t * 3 # animated UIs never go quiet: stop after a bounded time
+        while time.time() < end and select.select([fd], [], [], t)[0]:
             try: d = os.read(fd, 65536)
             except OSError: return
             if not d: return
