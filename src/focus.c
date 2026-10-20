@@ -456,19 +456,40 @@ void vui_quit(VuiCtx *ui)
     ui->quit = 1;
 }
 
+// Least time between two frames while input keeps arriving. A full frame costs tens of ms on a small
+// board; drawing one per few pasted bytes would spend all the time drawing.
+#ifndef VUI_MIN_FRAME_MS
+#ifdef __NuttX__
+#define VUI_MIN_FRAME_MS 40
+#else
+#define VUI_MIN_FRAME_MS 8
+#endif
+#endif
+
 void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata)
 {
     int dirty = 1;
+    uint64_t last_frame = 0;
 
     ui->quit = 0;
+    ui->frame_wait = -1;
 
     while (!ui->quit) {
         VuiEvent event;
+        uint64_t now = vui_platform_now_ms();
 
-        // Not while more input is waiting: that frame would be replaced at once (drags, key repeat, paste)
-        if (dirty && !vui_platform_input_pending()) {
-            vui_render(ui, root);
-            dirty = 0;
+        ui->frame_wait = -1;
+
+        if (dirty) {
+            // Draw now unless more input is already waiting or a frame was drawn a moment ago: then
+            // wait out the rest of the frame time for the burst to go on (the wait ends early on input)
+            if (now - last_frame >= VUI_MIN_FRAME_MS && !vui_platform_input_pending()) {
+                vui_render(ui, root);
+                dirty = 0;
+                last_frame = vui_platform_now_ms();
+            } else if (now - last_frame < VUI_MIN_FRAME_MS) {
+                ui->frame_wait = (int)(VUI_MIN_FRAME_MS - (now - last_frame));
+            }
         }
 
         event = vui_poll_event(ui);

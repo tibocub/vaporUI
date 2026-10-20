@@ -19,6 +19,7 @@ struct VuiCtx {
     VuiNode *removed[VUI_MAX_OVERLAYS]; // unlinked, freed on the next render/dispatch
     unsigned int removed_count;
     int quit;
+    int frame_wait; // vui_run: -1, or the most vui_poll_event may wait (a frame is due)
     VuiNode *root; // last root given to vui_render / vui_dispatch
     VuiWatch watches[VUI_MAX_WATCH];
     unsigned int watch_count;
@@ -37,6 +38,7 @@ void vui_overlays_free(VuiCtx *ui);
 void vui_theme_reset(void);     // back to the default theme
 void vui_clipboard_free(void);
 int vui_platform_input_pending(void); // implemented by each backend
+uint64_t vui_platform_now_ms(void);
 
 extern void (*vui_clipboard_hook)(const char *utf8);
 

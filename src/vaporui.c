@@ -9,7 +9,7 @@ void vui_platform_shutdown(void);
 int vui_platform_get_size(VuiSize *size);
 void vui_platform_clear(void);
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready);
-uint64_t vui_platform_now_ms(void);
+
 void vui_platform_set_mouse(int level);
 
 static VuiCtx *the_ui;
@@ -48,6 +48,7 @@ VuiCtx *vui_init(void)
         return NULL;
     }
 
+    ui->frame_wait = -1;
     vui_platform_clear();
     the_ui = ui;
 
@@ -200,7 +201,13 @@ VuiEvent vui_poll_event(VuiCtx *ui)
         fds[i] = ui->watches[i].fd;
     }
 
-    VuiEvent event = vui_platform_poll_event(timer_timeout(ui), fds, n, ready);
+    int timeout = timer_timeout(ui);
+
+    if (ui->frame_wait >= 0 && (timeout < 0 || ui->frame_wait < timeout)) {
+        timeout = ui->frame_wait;
+    }
+
+    VuiEvent event = vui_platform_poll_event(timeout, fds, n, ready);
 
     if (event.type == VUI_EVENT_RESIZE) {
         ui->size = event.size;
