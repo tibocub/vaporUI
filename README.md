@@ -85,7 +85,7 @@ Controls:
 
 Windows backend (`src/platform/win32.c`):
 - [WIP] VT console mode, raw input, resize events, size: compiles with mingw and starts under Wine; untested on a real Windows console
-- [ ] fd watches (pipes, sockets)
+- [x] fd watches on pipes (polled; sockets not supported); checked under Wine with `make wintest`
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution

@@ -27,6 +27,10 @@ build:
 	mkdir -p build
 
 # automated checks: input decoder
+# Windows backend check (needs wine or a Windows console): make wintest && wine build/win-watch.exe
+wintest: build
+	x86_64-w64-mingw32-gcc $(CFLAGS) -Isrc tests/win_watch.c $(SRCS) $(WIN32) -o build/win-watch.exe
+
 test: build
 	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c -o build/input-test
 	build/input-test

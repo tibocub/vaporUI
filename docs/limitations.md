@@ -35,9 +35,9 @@ the kitty protocol; no X10 mouse; no focus events; the Escape key has a 25 ms di
 
 **Platforms**
 - Backends: POSIX (Linux/macOS/BSD; NuttX untested) and Windows (`src/platform/win32.c`, VT console mode; cross-built with
-  `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`). The Windows one has only been compiled and started under Wine (input loop and Ctrl-C
+  `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`). The Windows one has only been compiled and run under Wine (input loop, Ctrl-C and the pipe watch
   verified; Wine's console doesn't render VT faithfully, so the drawing is unverified), not run on a real Windows console.
-  Windows differences: no fd watches (timers work), `picker` and `event-loop` aren't built (POSIX-only calls).
+  Windows differences: fd watches work for CRT fds that are pipes (polled every 10 ms while any is watched; sockets can't be watched; other kinds always report ready), `picker` and `event-loop` aren't built (POSIX-only calls). `make wintest` + wine checks the pipe watch.
   Consoles without VT support (pre-Windows 10) are not supported. The POSIX one is the reference.
 - When stdin or stdout is a pipe, both backends draw on and read from the terminal (`/dev/tty`, `CONIN$`/`CONOUT$`) and leave
   stdout alone (so `find | picker | xargs ...` works); init fails if there is no terminal at all.

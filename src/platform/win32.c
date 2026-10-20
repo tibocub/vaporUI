@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <io.h>
 #include <stdio.h>
+#include <string.h>
 #include <windows.h>
 
 #include "../../include/vaporui.h"
@@ -154,22 +155,32 @@ static void queue_utf16(WCHAR w)
     }
 }
 
-// shortcut: extra fds are not watched on Windows (consoles, pipes and sockets need different
-// waits); timers still work. Upgrade when a Windows multiplexer needs child-process pipes.
+// A watched fd is a CRT fd (_pipe, _open): pipes are readable when they hold data or are
+// broken (hangup); other kinds report ready. Sockets (not CRT fds) can't be watched.
+static int fd_ready(int fd)
+{
+    HANDLE h = (HANDLE)_get_osfhandle(fd);
+    DWORD avail;
+
+    if (h == INVALID_HANDLE_VALUE || GetFileType(h) != FILE_TYPE_PIPE) {
+        return 1;
+    }
+
+    return !PeekNamedPipe(h, NULL, 0, NULL, &avail, NULL) || avail > 0;
+}
+
+// shortcut: with fds watched, the wait is sliced into 10 ms polls (the console handle and pipes
+// can't share one wait); idle cost is ~100 wakeups/s. Upgrade to overlapped reads / worker threads.
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)
 {
     VuiEvent event = { .type = VUI_EVENT_NONE };
     INPUT_RECORD rec;
     DWORD got;
     int esc_first;
-
-    (void)fds;
-
-    for (unsigned int i = 0; i < n; i++) {
-        ready[i] = 0;
-    }
+    uint64_t end;
 
     if (pending_pos < pending_len) {
+        memset(ready, 0, n);
         return vui_input_feed(&input_decoder, pending[pending_pos++]);
     }
 
@@ -179,8 +190,32 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         timeout_ms = VUI_ESCAPE_TIMEOUT_MS;
     }
 
-    if (WaitForSingleObject(con_in, timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms) != WAIT_OBJECT_0) {
-        return esc_first ? vui_input_timeout(&input_decoder) : event;
+    end = vui_platform_now_ms() + (timeout_ms < 0 ? 0 : (unsigned int)timeout_ms);
+
+    for (;;) {
+        DWORD wait = timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms;
+        int any = 0;
+
+        for (unsigned int i = 0; i < n; i++) {
+            ready[i] = (unsigned char)fd_ready(fds[i]);
+            any |= ready[i];
+        }
+
+        if (any) {
+            return event;
+        }
+
+        if (n > 0 && wait > 10) {
+            wait = 10;
+        }
+
+        if (WaitForSingleObject(con_in, wait) == WAIT_OBJECT_0) {
+            break;
+        }
+
+        if (n == 0 || (timeout_ms >= 0 && vui_platform_now_ms() >= end)) {
+            return esc_first ? vui_input_timeout(&input_decoder) : event;
+        }
     }
 
     if (!ReadConsoleInputW(con_in, &rec, 1, &got) || got == 0) {
