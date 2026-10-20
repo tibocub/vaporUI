@@ -20,7 +20,8 @@ typedef enum {
     VUI_EVENT_MOUSE,
     VUI_EVENT_PASTE_START, // pasted content follows as VUI_EVENT_TEXT (newlines as '\n')
     VUI_EVENT_PASTE_END,
-    VUI_EVENT_WAKE // a watched fd or timer callback ran: redraw if the state it changed is shown
+    VUI_EVENT_WAKE, // a watched fd or timer callback ran: redraw if the state it changed is shown
+    VUI_EVENT_CLOSE // the terminal went away (EOF / hangup): vui_run() quits on it
 } VuiEventType;
 
 typedef enum {
@@ -565,6 +566,28 @@ typedef struct {
 } VuiDropdown;
 
 VuiDropdown *dropdown_create(const char **items, unsigned int count, void (*on_change)(VuiNode *dropdown, unsigned int index));
+
+// A context menu: a popup list of `items` at (x, y) (clamped on screen); picking one
+// closes it and calls on_pick(ud, index). Escape or a click outside closes it.
+void menu_popup(int x, int y, const char **items, unsigned int count, void (*on_pick)(void *ud, unsigned int index), void *ud);
+
+// A menu bar: put it in a bar. Click a title (or focus it, Left/Right, Enter/Down) to drop
+// down its items; Left/Right in the open menu switch to the neighbour. A pick calls
+// on_pick(bar, menu index, item index). The menus array must outlive the bar.
+typedef struct {
+    const char *title;
+    const char **items;
+    unsigned int count;
+} VuiMenu;
+
+typedef struct VuiMenubar {
+    VuiNode node;
+    const VuiMenu *menus;
+    unsigned int count, active;
+    void (*on_pick)(struct VuiMenubar *bar, unsigned int menu, unsigned int item);
+} VuiMenubar;
+
+VuiMenubar *menubar_create(const VuiMenu *menus, unsigned int count, void (*on_pick)(VuiMenubar *bar, unsigned int menu, unsigned int item));
 
 // A one-line row in the theme's bar style, e.g. a status or menu bar.
 // Put labels in it (set their style to vui_theme()->bar so they match).

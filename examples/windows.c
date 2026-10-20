@@ -1,7 +1,7 @@
 // windows: floating windows (overlays), modal dialog, drop-down, bars, scrolling, timers, themes.
 //
 // Verify:
-//   - the top bar shows menu labels and a clock that ticks every second (a vui_timer)
+//   - the top bar shows a File / View menu bar and a clock that ticks every second (a vui_timer)
 //   - "New window" opens a window (up to 6): drag its title bar to move it, its bottom-right
 //     corner to resize it, [x] to close it; clicking a window raises it; only the top window's
 //     title bar is highlighted; a window can't be dragged completely off screen
@@ -12,6 +12,9 @@
 //     or "No" closes it (focus returns to the Quit button), "Yes" quits
 //   - the drop-down switches theme (classic / dos / truecolor): Enter, Space, Down or a click
 //     opens a popup list; Escape or a click outside closes it without changing anything
+//   - File / View: click a title, or Tab to the bar (Left/Right pick, Enter/Down opens); in an open
+//     menu Left/Right jump to the neighbour, Enter or a click picks, Escape closes it
+//   - right-click on the desktop opens a context menu with the themes (kept on screen near edges)
 //   - the bottom bar names the theme; Ctrl-C quits
 
 #include <stdio.h>
@@ -160,6 +163,39 @@ static VuiButton *add_button(VuiNode *parent, const char *label, void (*on_click
     return b;
 }
 
+static const char *file_items[] = { "New window", "Scroll window", "Quit" };
+static const char *view_items[] = { "classic", "dos", "truecolor" };
+static const VuiMenu menus[] = { { "File", file_items, 3 }, { "View", view_items, 3 } };
+
+static void menu_pick(VuiMenubar *bar, unsigned int menu, unsigned int item)
+{
+    (void)bar;
+
+    if (menu == 1) set_theme(NULL, item);
+    else if (item == 0) new_window(NULL);
+    else if (item == 1) scroll_window(NULL);
+    else quit_dialog(NULL);
+}
+
+static void context_pick(void *ud, unsigned int item)
+{
+    (void)ud;
+    set_theme(NULL, item);
+}
+
+static int desktop_event(VuiNode *node, VuiCtx *ui, const VuiEvent *e)
+{
+    (void)node;
+    (void)ui;
+
+    if (e->type == VUI_EVENT_MOUSE && e->mouse.action == VUI_MOUSE_PRESS && e->mouse.button == VUI_MOUSE_RIGHT) {
+        menu_popup(e->mouse.x, e->mouse.y, view_items, 3, context_pick, NULL);
+        return 1;
+    }
+
+    return 0;
+}
+
 static void draw_desktop(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     (void)userdata;
@@ -196,7 +232,7 @@ int main(void)
 
     top = bar_create();
     bar_label(top, "vaporUI");
-    bar_label(top, " File  Edit  View");
+    node_add(&top->node, &menubar_create(menus, 2, menu_pick)->node);
     spacer = node_create();
     spacer->grow = 1;
     node_add(&top->node, spacer);
@@ -209,6 +245,7 @@ int main(void)
     desktop->gap = 1;
     node_pad(desktop, 1, 2, 1, 2);
     desktop->draw = draw_desktop;
+    desktop->on_event = desktop_event;
     desktop->align = VUI_ALIGN_START;
     node_add(root, desktop);
 

@@ -96,9 +96,9 @@ VaporUI widgets:
 - [x] floating window (overlays: z-order, modal, dismiss; movable, resizable `window`)
 - [x] popup (overlay with `VUI_OVERLAY_DISMISS`)
 - [x] drop-down
-- [x] bar (status bar; a menu bar with dropdown menus is still to do)
+- [x] bar (status bar; menu bars: `menubar_create`)
 - [x] scroll container, virtual list
-- [ ] menu bar / context menu
+- [x] menu bar / context menu (`menubar_create`, `menu_popup`)
 - [x] border
 - [x] div
 - [x] push button

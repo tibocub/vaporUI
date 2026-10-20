@@ -106,6 +106,10 @@ int main(void)
             event = vui_poll_event(ui);
         } while (event.type == VUI_EVENT_NONE);
 
+        if (event.type == VUI_EVENT_CLOSE) {
+            break;
+        }
+
         // plain 'q' arrives as text, Ctrl-C as a modified key
         if ((event.type == VUI_EVENT_TEXT && event.text.codepoint == 'q')
             || (event.type == VUI_EVENT_KEY && event.key.key == VUI_KEY_CHAR

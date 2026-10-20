@@ -214,13 +214,25 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         ready[i] = (pfd[1 + i].revents & (POLLIN | POLLHUP | POLLERR)) != 0;
     }
 
+    if (pfd[0].revents & (POLLHUP | POLLERR | POLLNVAL) && !(pfd[0].revents & POLLIN)) {
+        event.type = VUI_EVENT_CLOSE;
+        return event;
+    }
+
     if (!(pfd[0].revents & POLLIN)) {
         // Timed out: no more bytes came, so a pending escape
         // sequence was actually just a standalone ESC keypress.
         return result == 0 && esc_first ? vui_input_timeout(&input_decoder) : event;
     }
 
-    if (read(tty_fd, &c, 1) <= 0) {
+    result = read(tty_fd, &c, 1);
+
+    if (result == 0 || (result < 0 && errno != EINTR && errno != EAGAIN)) {
+        event.type = VUI_EVENT_CLOSE;
+        return event;
+    }
+
+    if (result < 0) {
         return event;
     }
 

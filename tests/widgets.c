@@ -30,6 +30,12 @@ static void on_read(VuiCtx *ui, int fd, void *ud) { (void)ud; reads++; vui_unwat
 static void on_close(VuiNode *n) { (void)n; closed++; }
 static const char *row_text(VuiList *l, unsigned int i) { (void)l; static char b[16]; snprintf(b, sizeof b, "row %u", i); return b; }
 
+static const char *m_a[] = { "a0", "a1" }, *m_b[] = { "b0", "b1", "b2" };
+static const VuiMenu test_menus[] = { { "File", m_a, 2 }, { "Edit", m_b, 3 } };
+static int picked_menu = -1, picked_item = -1, ctx_item = -1;
+static void on_menu(VuiMenubar *b, unsigned int m, unsigned int i) { (void)b; picked_menu = m; picked_item = i; }
+static void on_ctx(void *ud, unsigned int i) { (void)ud; ctx_item = i; }
+
 static VuiEvent mouse(VuiMouseButton b, VuiMouseAction a, unsigned int x, unsigned int y)
 {
     return (VuiEvent){ .type = VUI_EVENT_MOUSE, .mouse = { b, a, 0, x, y } };
@@ -453,6 +459,28 @@ int main(void)
     vui_set_focus(ui, &btns[0]->node);
     node_layout(root, (VuiRect){ 0, 0, 10, 6 });
     assert(root->scroll == 0);
+    node_destroy(root);
+
+    VuiMenubar *mb = menubar_create(test_menus, 2, on_menu);
+    root = node_create();
+    node_add(root, &mb->node);
+    node_layout(root, (VuiRect){ 0, 0, 40, 10 });
+    vui_set_focus(ui, &mb->node);
+    VuiEvent down = keyev(VUI_KEY_DOWN), right = keyev(VUI_KEY_RIGHT), enter = keyev(VUI_KEY_ENTER);
+    vui_dispatch(ui, root, &down);
+    assert(ui->overlay_count == 1 && ui->overlays[0].node->rect.x == 0 && ui->overlays[0].node->rect.y == 1);
+    vui_dispatch(ui, root, &right); // open menu jumps to the neighbour
+    assert(ui->overlay_count == 1 && mb->active == 1 && ui->overlays[0].node->rect.x == 6);
+    vui_dispatch(ui, root, &enter);
+    assert(picked_menu == 1 && picked_item == 0 && ui->overlay_count == 0);
+    vui_dispatch(ui, root, &(VuiEvent){ .type = VUI_EVENT_NONE });
+
+    menu_popup(30, 8, m_b, 3, on_ctx, NULL);
+    assert(ui->overlay_count == 1 && ui->overlays[0].node->rect.y + (int)ui->overlays[0].node->rect.height <= 24); // clamped on screen
+    vui_dispatch(ui, root, &down);
+    vui_dispatch(ui, root, &enter);
+    assert(ctx_item == 1 && ui->overlay_count == 0);
+    vui_dispatch(ui, root, &(VuiEvent){ .type = VUI_EVENT_NONE });
     node_destroy(root);
     vui_shutdown(ui);
 

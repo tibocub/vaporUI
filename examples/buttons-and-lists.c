@@ -151,6 +151,10 @@ int main(void)
             event = vui_poll_event(ui);
         } while (event.type == VUI_EVENT_NONE);
 
+        if (event.type == VUI_EVENT_CLOSE) {
+            break;
+        }
+
         if (event.type == VUI_EVENT_KEY && ctl_dispatch(global, ui, &event.key)) {
             continue;
         }

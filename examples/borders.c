@@ -77,6 +77,10 @@ int main(void)
             event = vui_poll_event(ui);
         } while (event.type == VUI_EVENT_NONE);
 
+        if (event.type == VUI_EVENT_CLOSE) {
+            break;
+        }
+
         if (event.type == VUI_EVENT_KEY && event.key.key == VUI_KEY_CHAR
             && event.key.modifiers == VUI_MOD_CTRL && event.key.character == 'c') {
             break;

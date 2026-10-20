@@ -27,6 +27,8 @@ into stays empty unless the parent sets `justify`. Custom nodes set `measure` to
 | scroll container | `scroll_create()` (a plain `VuiNode`) | Children keep their natural size and scroll: wheel, arrows / PageUp / PageDown / Home / End when no child takes them, a clickable scrollbar; focusing a child scrolls it into view. Give children a `basis` (or `VUI_AUTO` content) |
 | `VuiWindow` | `window_create(title)` | A DOS-style frame for an overlay: drag the title bar, resize from the bottom-right corner, `[x]` closes (`on_close`, else it removes itself). The top window has the `title` style, the others `title_off` |
 | `VuiDropdown` | `dropdown_create(items, count, on_change)` | One-line selector; Enter / Space / Down / click opens a popup list (an overlay that dismisses on Escape or an outside click). `selected` holds the choice |
+| `VuiMenubar` | `menubar_create(menus, count, on_pick)` | Menu titles in one row (put it in a `bar`); click a title or Left/Right + Enter/Down opens its items; Left/Right in the open menu switch menus. `on_pick(bar, menu, item)` |
+| (context menu) | `menu_popup(x, y, items, count, on_pick, ud)` | Popup list at a point (e.g. on a right-click); kept on screen; Escape or an outside click closes it |
 | bar | `bar_create()` (a `VuiDiv`) | One row in the theme's `bar` style, gap 1: put labels in it (give them `style = vui_theme()->bar`) for status or menu bars |
 
 Callbacks receive the widget's `VuiNode *`; use `node->userdata` for your own state.

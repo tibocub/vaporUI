@@ -151,6 +151,10 @@ int main(void)
     while (app.running) {
         VuiEvent event = vui_poll_event(app.ui);
 
+        if (event.type == VUI_EVENT_CLOSE) {
+            break;
+        }
+
         if (event.type == VUI_EVENT_KEY && ctl_dispatch(global, app.ui, &event.key)) {
             continue;
         }

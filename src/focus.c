@@ -461,6 +461,10 @@ void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata)
         vui_render(ui, root);
         event = vui_poll_event(ui);
 
+        if (event.type == VUI_EVENT_CLOSE) {
+            break;
+        }
+
         if (event.type == VUI_EVENT_NONE || (handler != NULL && handler(ui, &event, userdata))) {
             continue;
         }
