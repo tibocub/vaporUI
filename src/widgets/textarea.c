@@ -6,8 +6,22 @@
 #include "util.h"
 
 #define NONE ((unsigned int)-1)
-#define HISTORY_MAX_CHARS 65536 // shortcut: history is dropped entirely past this, no partial trimming
-#define HISTORY_MAX_EDITS 4096
+// Limits that matter on small targets (history stores every typed character a second time, 4 bytes each;
+// an edit record is 20 bytes). Override with -D. shortcut: history is dropped entirely past its limit.
+#ifdef __NuttX__
+#define VUI_TEXTAREA_HISTORY_CHARS 2048
+#define VUI_TEXTAREA_HISTORY_EDITS 128
+#define VUI_TEXTAREA_MAX_CHARS     8192 // textarea_create(0) means this much, not unlimited
+#endif
+#ifndef VUI_TEXTAREA_HISTORY_CHARS
+#define VUI_TEXTAREA_HISTORY_CHARS 65536
+#define VUI_TEXTAREA_HISTORY_EDITS 4096
+#endif
+#ifndef VUI_TEXTAREA_MAX_CHARS
+#define VUI_TEXTAREA_MAX_CHARS 0 // unlimited
+#endif
+#define HISTORY_MAX_CHARS VUI_TEXTAREA_HISTORY_CHARS
+#define HISTORY_MAX_EDITS VUI_TEXTAREA_HISTORY_EDITS
 
 // -- History --
 // Linear list of edits; edits[0..done) can be undone, [done..count) redone.
@@ -34,7 +48,7 @@ static void history_clear(VuiHistory *h)
 static int pool_reserve(VuiHistory *h, unsigned int extra)
 {
     if (h->pool_len + extra > h->pool_cap) {
-        unsigned int cap = (h->pool_len + extra) * 2;
+        unsigned int cap = (h->pool_len + extra) * 3 / 2 + 16;
         VuiCodepoint *pool = realloc(h->pool, cap * sizeof(VuiCodepoint));
 
         if (pool == NULL) {
@@ -77,20 +91,26 @@ static unsigned int wrap_width(const VuiTextarea *t)
     return w > 1 ? w - 1 : 1;
 }
 
+static int at_line_end(const VuiTextarea *t, unsigned int i)
+{
+    return i >= t->len || t->text[i] == '\n';
+}
+
 // End (exclusive) of the visual row starting at s. A row break falls after the
-// last space that fits, or mid-word when the word is longer than a row.
+// last space that fits, or mid-word when the word is longer than a row. Costs
+// one row, not the whole line (a 10k-character line would make typing quadratic).
 static unsigned int row_end(const VuiTextarea *t, unsigned int s)
 {
-    unsigned int le = line_end(t, s), i = s, c = 0, after_space = 0, w = wrap_width(t);
+    unsigned int i = s, c = 0, after_space = 0, w = wrap_width(t);
 
-    if (!t->wrap) return le;
+    if (!t->wrap) return line_end(t, s);
 
-    for (; i < le && c + cw(t->text[i]) <= w; i++) {
+    for (; !at_line_end(t, i) && c + cw(t->text[i]) <= w; i++) {
         c += cw(t->text[i]);
         if (t->text[i] == ' ') after_space = i + 1;
     }
 
-    if (i == le) return le;
+    if (at_line_end(t, i)) return i;
     if (t->text[i] == ' ') return i + 1; // the space that doesn't fit hangs at the row's end
     if (after_space > s) return after_space;
     return i > s ? i : s + 1;
@@ -98,22 +118,44 @@ static unsigned int row_end(const VuiTextarea *t, unsigned int s)
 
 static unsigned int row_start(const VuiTextarea *t, unsigned int i)
 {
-    unsigned int s = line_start(t, i), le = line_end(t, i);
+    unsigned int s = line_start(t, i);
 
     for (;;) {
         unsigned int e = row_end(t, s);
 
-        if (i < e || e >= le) return s;
+        if (i < e || at_line_end(t, e)) return s;
         s = e;
+    }
+}
+
+// row_start() for an index at or after `hint`, a known row start: walks rows from the hint instead of from the
+// start of the line, so the cost is the distance (a screenful when the cursor is visible), not the line length.
+static unsigned int row_from(const VuiTextarea *t, unsigned int hint, unsigned int i)
+{
+    unsigned int s = hint;
+
+    if (i < hint) return row_start(t, i);
+
+    for (;;) {
+        unsigned int e = row_end(t, s);
+
+        if (i < e) return s;
+
+        if (at_line_end(t, e)) {
+            if (i == e || e >= t->len) return s;
+            s = e + 1;
+        } else {
+            s = e;
+        }
     }
 }
 
 static unsigned int next_row(const VuiTextarea *t, unsigned int s)
 {
-    unsigned int e = row_end(t, s), le = line_end(t, s);
+    unsigned int e = row_end(t, s);
 
-    if (e < le) return e;
-    return le < t->len ? le + 1 : NONE;
+    if (!at_line_end(t, e)) return e;
+    return e < t->len ? e + 1 : NONE;
 }
 
 // Last cursor position on the row [s, e): the end of a wrapped row belongs to the next row.
@@ -121,7 +163,7 @@ static unsigned int row_limit(const VuiTextarea *t, unsigned int s)
 {
     unsigned int e = row_end(t, s);
 
-    return e < line_end(t, s) ? e - 1 : e;
+    return at_line_end(t, e) ? e : e - 1;
 }
 
 // Index in the row starting at s that is at (or just before) display column `col`.
@@ -161,11 +203,16 @@ static unsigned int sel_hi(const VuiTextarea *t) { return t->cursor < t->anchor 
 static int reserve(VuiTextarea *t, unsigned int n)
 {
     if (n > t->cap) {
-        unsigned int cap = t->cap ? t->cap * 2 : 64;
+        unsigned int cap = t->cap ? t->cap + t->cap / 2 : 64; // x1.5: a doubling realloc can need 3x the text at once
         VuiCodepoint *text;
 
-        while (cap < n) cap *= 2;
+        while (cap < n) cap += cap / 2 + 16;
         text = realloc(t->text, cap * sizeof(VuiCodepoint));
+
+        if (text == NULL) {
+            cap = n + 16;
+            text = realloc(t->text, cap * sizeof(VuiCodepoint));
+        }
 
         if (text == NULL) return 0;
 
@@ -183,6 +230,7 @@ static void splice(VuiTextarea *t, unsigned int pos, unsigned int del, const Vui
     memmove(t->text + pos + n, t->text + pos + del, (t->len - pos - del) * sizeof(VuiCodepoint));
     if (n > 0) memcpy(t->text + pos, ins, n * sizeof(VuiCodepoint));
     t->len = t->len - del + n;
+    if (pos < t->top) t->top = 0; // row starts before the edit are still valid; `top` after it may not be
     t->changed = 1;
     t->reveal = 1;
 }
@@ -199,6 +247,9 @@ static unsigned int replace(VuiTextarea *t, unsigned int pos, unsigned int del, 
     }
 
     if (del == 0 && n == 0) return 0;
+
+    // Out of memory: refuse before anything (history, cursor) is changed
+    if (!reserve(t, t->len - del + n)) return 0;
 
     if (h == NULL) h = t->history = calloc(1, sizeof(*h));
 
@@ -345,13 +396,15 @@ static void move_up(VuiTextarea *t)
 {
     unsigned int s = row_start(t, t->cursor);
 
+    if (t->want == NONE) t->want = cols(t, s, t->cursor);
     if (s > 0) t->cursor = index_at(t, row_start(t, s - 1), t->want);
 }
 
 static void move_down(VuiTextarea *t)
 {
-    unsigned int n = next_row(t, row_start(t, t->cursor));
+    unsigned int s = row_start(t, t->cursor), n = next_row(t, s);
 
+    if (t->want == NONE) t->want = cols(t, s, t->cursor);
     if (n != NONE) t->cursor = index_at(t, n, t->want);
 }
 
@@ -525,7 +578,7 @@ static int textarea_event(VuiNode *node, VuiCtx *ui, const VuiEvent *event)
                 t->anchor = i;
             }
 
-            t->want = cols(t, row_start(t, i), i);
+            t->want = NONE;
             return 1;
         }
         return event->mouse.button == VUI_MOUSE_LEFT;
@@ -539,7 +592,7 @@ static int textarea_event(VuiNode *node, VuiCtx *ui, const VuiEvent *event)
     }
 
     if (!vertical) {
-        t->want = cols(t, row_start(t, t->cursor), t->cursor);
+        t->want = NONE; // worked out when Up/Down need it: a row walk per keystroke made pasting quadratic
     }
 
     t->reveal = 1;
@@ -559,10 +612,16 @@ static int textarea_event(VuiNode *node, VuiCtx *ui, const VuiEvent *event)
 
 static void reveal(VuiTextarea *t, unsigned int w, unsigned int h)
 {
-    unsigned int crow = row_start(t, t->cursor), n = 0, s;
+    unsigned int key = w | (t->wrap ? 0x80000000u : 0), crow, n = 0, s;
 
+    // `top` is kept a row start by every edit, so only a new width / wrap setting needs the long way round
     if (t->top > t->len) t->top = t->len;
-    t->top = row_start(t, t->top);
+    if (key != t->wrap_key) {
+        t->top = row_start(t, t->top);
+        t->wrap_key = key;
+    }
+
+    crow = row_from(t, t->top, t->cursor);
 
     if (crow < t->top) {
         t->top = crow;
@@ -604,7 +663,7 @@ static void textarea_draw(VuiNode *node, VuiScreen *scr, void *userdata)
     s = t->top;
 
     for (unsigned int row = 0; row < r.height && s != NONE; row++) {
-        unsigned int e = row_end(t, s), le = line_end(t, s), c = 0, skip = t->wrap ? 0 : t->left;
+        unsigned int e = row_end(t, s), c = 0, skip = t->wrap ? 0 : t->left;
 
         for (unsigned int i = s; i < e; i++) {
             int selected = i >= lo && i < hi;
@@ -622,7 +681,7 @@ static void textarea_draw(VuiNode *node, VuiScreen *scr, void *userdata)
         }
 
         // Past the last character of a line: the cursor, or a selected newline, shows as a blank cell.
-        if (e == le && c >= skip && c - skip < r.width) {
+        if (at_line_end(t, e) && c >= skip && c - skip < r.width) {
             int newline_selected = e < t->len && e >= lo && e < hi;
 
             if (node->focused && e == t->cursor) {
@@ -656,7 +715,7 @@ VuiTextarea *textarea_create(unsigned int max_chars)
     VuiTextarea *t = (VuiTextarea *)node_alloc(sizeof(VuiTextarea));
 
     if (t != NULL) {
-        t->max = max_chars;
+        t->max = max_chars != 0 ? max_chars : VUI_TEXTAREA_MAX_CHARS;
         t->tab_width = 4;
         t->wrap = 1;
         t->node.grow = 1;
@@ -678,7 +737,8 @@ void textarea_set_text(VuiTextarea *t, const char *utf8)
     if (!reserve(t, n)) return;
 
     t->len = vui_utf8_to_cps(utf8, t->text, n);
-    t->cursor = t->anchor = t->want = t->top = t->left = 0;
+    t->cursor = t->anchor = t->top = t->left = 0;
+    t->want = NONE;
     t->reveal = 1;
 
     if (t->history != NULL) history_clear(t->history);

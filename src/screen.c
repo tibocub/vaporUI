@@ -217,13 +217,16 @@ void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, Vu
 
 void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *str, VuiStyle style)
 {
+    scr_putn(scr, x, y, str, strlen(str), style);
+}
+
+void scr_putn(VuiScreen *scr, unsigned int x, unsigned int y, const char *str, size_t n, VuiStyle style)
+{
     VuiUtf8Decoder decoder;
 
     vui_utf8_reset(&decoder);
 
-    // No wide-character handling yet -- each codepoint advances one
-    // cell, so CJK/emoji will misalign until that's added.
-    while (*str != '\0') {
+    while (n-- > 0) {
         uint32_t cp;
 
         if (vui_utf8_feed(&decoder, (uint8_t)*str++, &cp) == VUI_UTF8_COMPLETE) {

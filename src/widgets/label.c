@@ -3,21 +3,16 @@
 static unsigned int label_measure(VuiNode *node, int row)
 {
     const char *s = ((VuiLabel *)node)->text;
-    unsigned int width = 0, line = 0, lines = 1;
+    unsigned int width = 0, lines = 1;
 
-    for (const char *p = s; ; p++) {
+    for (const char *line = s, *p = s; ; p++) {
         if (*p == '\n' || *p == '\0') {
-            char buf[256];
-            unsigned int n = (unsigned int)(p - (s + line));
+            unsigned int w = vui_strn_width(line, (size_t)(p - line));
 
-            if (n >= sizeof(buf)) n = sizeof(buf) - 1;
-            for (unsigned int i = 0; i < n; i++) buf[i] = s[line + i];
-            buf[n] = '\0';
-
-            if (vui_str_width(buf) > width) width = vui_str_width(buf);
+            if (w > width) width = w;
             if (*p == '\0') break;
 
-            line = (unsigned int)(p - s) + 1;
+            line = p + 1;
             lines++;
         }
     }
@@ -28,20 +23,17 @@ static unsigned int label_measure(VuiNode *node, int row)
 static void label_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiLabel *l = (VuiLabel *)node;
-    char buf[256];
-    unsigned int row = 0, n = 0;
+    unsigned int row = 0;
 
     (void)userdata;
 
-    for (const char *p = l->text; ; p++) {
+    for (const char *line = l->text, *p = line; ; p++) {
         if (*p == '\n' || *p == '\0') {
-            buf[n] = '\0';
-            scr_puts(scr, node->rect.x, node->rect.y + row++, buf, l->style);
-            n = 0;
+            scr_putn(scr, node->rect.x, node->rect.y + row++, line, (size_t)(p - line), l->style);
 
             if (*p == '\0') break;
-        } else if (n < sizeof(buf) - 1) {
-            buf[n++] = *p;
+
+            line = p + 1;
         }
     }
 }

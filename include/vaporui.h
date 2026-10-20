@@ -247,9 +247,11 @@ unsigned int scr_height(VuiScreen *scr);
 // scr_set / scr_puts handle wide characters: a wide cell takes two columns.
 int vui_cp_width(VuiCodepoint cp);
 unsigned int vui_str_width(const char *utf8);
+unsigned int vui_strn_width(const char *utf8, size_t n); // first n bytes
 
 void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style);
 void scr_puts(VuiScreen *scr, unsigned int x, unsigned int y, const char *utf8, VuiStyle style);
+void scr_putn(VuiScreen *scr, unsigned int x, unsigned int y, const char *utf8, size_t n, VuiStyle style); // first n bytes
 void scr_clear(VuiScreen *scr, VuiStyle style);
 void scr_fill(VuiScreen *scr, VuiRect rect, VuiCodepoint cp, VuiStyle style);
 
@@ -637,13 +639,14 @@ typedef struct {
     unsigned int len, cap, max;
     unsigned int cursor; // index into text
     unsigned int anchor; // other end of the selection; equals cursor when nothing is selected
-    unsigned int want;   // column Up/Down try to return to
+    unsigned int want;   // column Up/Down try to return to ((unsigned)-1 = not worked out yet)
     unsigned int top;    // index of the first visible row's start
     unsigned int left;   // first visible column (no-wrap mode)
     unsigned int tab_width;
     int wrap;            // default 1
     int auto_indent;     // Enter copies the current line's indentation; default 0
     int reveal;          // scroll to the cursor on next draw
+    unsigned int wrap_key; // internal: width / wrap the current `top` was validated for
     int changed;
     VuiHistory *history;
     void (*on_change)(VuiNode *textarea);

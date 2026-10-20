@@ -487,6 +487,35 @@ int main(void)
     node_destroy(root);
 
     // Style table: 240 styles fill it, a frame using only 5 lets the next clear() reclaim it, then 200 new ones must all survive
+    // Long wrapped line: rows of 9 columns, `top` follows the cursor without rescanning, resizing re-validates it
+    {
+        VuiTextarea *lt = textarea_create(0);
+        VuiNode *lroot = node_create();
+        VuiScreen *ds = scr_create(40, 10);
+        VuiEvent home = keyev(VUI_KEY_HOME), up = keyev(VUI_KEY_UP), down = keyev(VUI_KEY_DOWN);
+
+        lt->node.grow = 1;
+        node_add(lroot, &lt->node);
+        vui_set_focus(ui, &lt->node);
+        node_layout(lroot, (VuiRect){ 0, 0, 10, 5 });
+        for (int i = 0; i < 100; i++) vui_dispatch(ui, lroot, &(VuiEvent){ .type = VUI_EVENT_TEXT, .text = { 'a' } });
+        node_draw(lroot, ds);
+        assert(lt->len == 100 && lt->cursor == 100 && lt->top == 99 - 4 * 9); // 5 rows shown, cursor on the last
+        vui_dispatch(ui, lroot, &home);
+        assert(lt->cursor == 99);
+        vui_dispatch(ui, lroot, &up);
+        assert(lt->cursor == 90);
+        vui_dispatch(ui, lroot, &down);
+        assert(lt->cursor == 99);
+        node_layout(lroot, (VuiRect){ 0, 0, 7, 5 }); // narrower: rows of 6, top must be re-validated
+        lt->reveal = 1;
+        node_draw(lroot, ds);
+        assert(lt->top % 6 == 0 && lt->top <= lt->cursor);
+        vui_set_focus(ui, NULL);
+        node_destroy(lroot);
+        scr_destroy(ds);
+    }
+
     VuiScreen *scr = scr_create(40, 10);
     char sgr_out[8192] = "";
     FILE *capture = tmpfile();

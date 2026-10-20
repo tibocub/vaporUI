@@ -21,6 +21,11 @@ static FILE *saved_stdout;          // the real stdout while the UI draws on /de
 static volatile sig_atomic_t resize_pending = 0;
 static VuiInputDecoder input_decoder;
 
+// Bytes read from the terminal but not yet decoded: one read() per burst instead of one per byte
+// (a paste is thousands of bytes; on a small target the syscalls were the cost).
+static unsigned char rx[64];
+static unsigned int rx_len, rx_pos;
+
 static void handle_sigwinch(int signal)
 {
     (void)signal;
@@ -101,6 +106,7 @@ int vui_platform_init(void)
     }
 
     vui_input_reset(&input_decoder);
+    rx_len = rx_pos = 0;
     vui_clipboard_hook = vtout_osc52_copy;
     vtout_start();
 
@@ -192,14 +198,13 @@ int vui_platform_input_pending(void)
 {
     struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
 
-    return resize_pending || (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN));
+    return resize_pending || rx_pos < rx_len || (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN));
 }
 
 // Waits up to timeout_ms (-1 = forever) for terminal input or any of the
 // n extra fds; ready[i] is set for the fds that are readable.
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)
 {
-    unsigned char c;
     ssize_t result;
     struct pollfd pfd[1 + VUI_MAX_WATCH];
     int esc = vui_input_pending_escape(&input_decoder), esc_first;
@@ -221,6 +226,10 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         }
 
         return event;
+    }
+
+    if (rx_pos < rx_len) {
+        return vui_input_feed(&input_decoder, rx[rx_pos++]);
     }
 
     pfd[0].fd = tty_fd;
@@ -270,7 +279,7 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return result == 0 && esc_first ? vui_input_timeout(&input_decoder) : event;
     }
 
-    result = read(tty_fd, &c, 1);
+    result = read(tty_fd, rx, sizeof(rx));
 
     if (result == 0 || (result < 0 && errno != EINTR && errno != EAGAIN)) {
         event.type = VUI_EVENT_CLOSE;
@@ -281,5 +290,8 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return event;
     }
 
-    return vui_input_feed(&input_decoder, c);
+    rx_len = (unsigned int)result;
+    rx_pos = 0;
+
+    return vui_input_feed(&input_decoder, rx[rx_pos++]);
 }

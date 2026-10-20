@@ -141,7 +141,8 @@ void node_layout(VuiNode *node, VuiRect rect)
     float grow_sum = 0;
     float shrink_basis_sum = 0; // CSS weighs shrink by shrink*basis, not shrink alone
 
-    unsigned int *sizes = malloc(node->child_count * 3 * sizeof(unsigned int));
+    unsigned int small[8 * 3]; // most containers have a few children: no malloc per node per frame
+    unsigned int *sizes = node->child_count <= 8 ? small : malloc(node->child_count * 3 * sizeof(unsigned int));
     unsigned int *bases, *cross;
 
     if (sizes == NULL) {
@@ -235,7 +236,7 @@ void node_layout(VuiNode *node, VuiRect rect)
         cursor += sizes[i] + gap;
     }
 
-    free(sizes);
+    if (sizes != small) free(sizes);
 }
 
 void node_draw(VuiNode *node, VuiScreen *scr)

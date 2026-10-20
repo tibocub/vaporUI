@@ -1,3 +1,5 @@
+#include <string.h>
+#include "../include/vaporui.h"
 #include "utf8.h"
 
 void vui_utf8_reset(VuiUtf8Decoder *decoder)
@@ -169,13 +171,18 @@ int vui_cp_width(uint32_t cp)
 
 unsigned int vui_str_width(const char *str)
 {
+    return vui_strn_width(str, strlen(str));
+}
+
+unsigned int vui_strn_width(const char *str, size_t n)
+{
     VuiUtf8Decoder d;
     uint32_t cp;
     unsigned int w = 0;
 
     vui_utf8_reset(&d);
 
-    for (; *str != '\0'; str++) {
+    for (; n > 0; str++, n--) {
         if (vui_utf8_feed(&d, (uint8_t)*str, &cp) == VUI_UTF8_COMPLETE) {
             w += vui_cp_width(cp);
         }
