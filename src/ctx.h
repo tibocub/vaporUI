@@ -34,6 +34,7 @@ struct VuiCtx {
 
 // Set by vui_init() to a backend that forwards copies to the system clipboard (OSC 52).
 void vui_overlays_free(VuiCtx *ui);
+int vui_platform_input_pending(void); // implemented by each backend
 
 extern void (*vui_clipboard_hook)(const char *utf8);
 

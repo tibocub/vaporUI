@@ -17,7 +17,7 @@ Current limits, in one place. Update this file when one is lifted.
 
 **Widgets / events**
 - Buttons activate on mouse *press*, not release.
-- Tab moves focus unless the focused node sets `wants_tab` and handles it (the text area does: use Shift-Tab, or Ctrl-Tab where the terminal sends it).
+- F6 / Shift-F6 always move focus. Tab moves focus unless the focused node sets `wants_tab` and handles it (the text area does: use Shift-Tab, or Ctrl-Tab where the terminal sends it).
 - `VuiInput` has a fixed capacity; both it and `VuiTextarea` store UTF-32. `VuiInput` has no undo or selection. The text area has no
   rectangular selection, search, line numbers or syntax anything; it finds lines by scanning the buffer (fine for
   thousands of lines, not huge files); undo history is dropped entirely past 64k characters / 4096 edits.
@@ -30,6 +30,11 @@ Current limits, in one place. Update this file when one is lifted.
 - Focus/hover pointers are validated against the tree on each dispatch, but destroying a subtree
   while the app still holds raw pointers into it is on the app.
 
+**Terminal-owned keys**: a terminal's own key bindings (Windows Terminal: Ctrl-Shift-C/V/F/P/T, Shift-PgUp/PgDn, Alt-Enter, F11;
+GNOME Terminal / Konsole: Ctrl-Shift-letters, Shift-PgUp/PgDn on the primary screen) are handled before the app ever sees the key.
+The alternate screen only frees the scroll keys on terminals that tie them to the primary screen; the rest has to be unbound in the
+terminal's settings. Keep essential app keys off those combinations.
+
 **Input**: see `input.md`: Ctrl+symbol / Ctrl+accented keys need a terminal with modifyOtherKeys or
 the kitty protocol; no X10 mouse; no focus events; the Escape key has a 25 ms disambiguation delay.
 
@@ -37,7 +42,7 @@ the kitty protocol; no X10 mouse; no focus events; the Escape key has a 25 ms di
 - Backends: POSIX (Linux/macOS/BSD; NuttX untested) and Windows (`src/platform/win32.c`, VT console mode; cross-built with
   `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`). The Windows one has only been compiled and run under Wine (input loop, Ctrl-C and the pipe watch
   verified; Wine's console doesn't render VT faithfully, so the drawing is unverified), not run on a real Windows console.
-  Windows differences: fd watches work for CRT fds that are pipes (polled every 10 ms while any is watched; sockets can't be watched; other kinds always report ready), `picker` and `event-loop` aren't built (POSIX-only calls). `make wintest` + wine checks the pipe watch.
+  Windows differences: fd watches work for CRT fds that are pipes (polled every 10 ms while any is watched; sockets can't be watched; other kinds always report ready), `event-loop` isn't built (fork / pipe / SIGCHLD). `make wintest` + wine checks the pipe watch.
   Consoles without VT support (pre-Windows 10) are not supported. The POSIX one is the reference.
 - When stdin or stdout is a pipe, both backends draw on and read from the terminal (`/dev/tty`, `CONIN$`/`CONOUT$`) and leave
   stdout alone (so `find | picker | xargs ...` works); init fails if there is no terminal at all.

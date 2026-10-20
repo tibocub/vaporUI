@@ -155,6 +155,11 @@ static void queue_utf16(WCHAR w)
     }
 }
 
+int vui_platform_input_pending(void)
+{
+    return pending_pos < pending_len || WaitForSingleObject(con_in, 0) == WAIT_OBJECT_0;
+}
+
 // A watched fd is a CRT fd (_pipe, _open): pipes are readable when they hold data or are
 // broken (hangup); other kinds report ready. Sockets (not CRT fds) can't be watched.
 static int fd_ready(int fd)

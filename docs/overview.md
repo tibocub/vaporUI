@@ -99,9 +99,13 @@ the background: `text` is what the screen and containers are cleared with. Color
 - Keys, text and paste go to the focused node. Mouse events go to the deepest node under the pointer
   (a left press also focuses the nearest focusable ancestor).
 - Tab / Shift-Tab move focus through `focusable` nodes in tree order. A focused node with
-  `wants_tab = 1` gets the Tab first (the text area does); if it returns 0, focus moves anyway. Ctrl-Tab always moves focus.
+  `wants_tab = 1` gets the Tab first (the text area does; set it to 0 and Tab navigates); if it returns 0, focus moves anyway.
+  **F6 / Shift-F6** (and Ctrl-Tab, where the terminal sends it) always move focus, even out of a text area.
 - `node->focused` and `node->hovered` are maintained for you; read them in draw callbacks.
-- Global shortcuts: check a `VuiControls` table (`ctl_bind` / `ctl_dispatch`) before `vui_dispatch`.
+- Global shortcuts: check a `VuiControls` table (`ctl_bind` / `ctl_dispatch`) before `vui_dispatch`, or with `vui_run` use its
+  handler: it only sees events no widget used ("widgets get first refusal"). So Ctrl-C can be both: a text area copies when it has a
+  selection (like Windows Terminal and most editors) and otherwise lets it through to your handler, which quits.
+  To take a key *before* a widget, wrap its `on_event` (below) or check it in your own loop before `vui_dispatch`.
 
 ## Writing your own node
 
@@ -116,6 +120,34 @@ c->node.draw = draw; c->node.on_event = on_event; c->node.focusable = 1;
 ```
 
 `examples/focus-routing.c` does exactly this. Widgets in `src/widgets/` are built the same way.
+
+## Customising built-in widgets
+
+Everything a widget does is a public field on its struct, set after `*_create()`:
+
+```c
+VuiTextarea *ta = textarea_create(0);
+ta->wrap = 0;                 // scroll sideways instead of wrapping
+ta->tab_width = 2; ta->auto_indent = 1;
+ta->node.wants_tab = 0;       // Tab moves focus instead of inserting
+```
+
+Styles are fields too (`label->style`, the theme for the rest). To change a behaviour that isn't a field, wrap the
+widget's handler: `on_event` is a plain function pointer, so keep the old one and call it for what you don't handle:
+
+```c
+static int (*orig)(VuiNode *, VuiCtx *, const VuiEvent *);
+static int mine(VuiNode *n, VuiCtx *ui, const VuiEvent *e)
+{
+    if (e->type == VUI_EVENT_KEY && e->key.key == VUI_KEY_ENTER) { /* your own Enter */ return 1; }
+    return orig(n, ui, e);
+}
+orig = ta->node.on_event; ta->node.on_event = mine;
+```
+
+When nothing fits, build a node by hand (above): `draw`, `on_event`, `measure`, `destroy` and `userdata` are all it takes,
+and it mixes freely with the built-ins in one tree. What isn't configurable yet: key bindings inside a widget (Ctrl-Z etc.
+are fixed; wrap `on_event` to override one) and per-widget style on widgets that only read the theme.
 
 ## Testing
 

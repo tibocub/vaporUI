@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "../include/vaporui.h"
@@ -40,6 +41,16 @@ static void add_line(char *s)
     lines[line_count++] = s;
 }
 
+static int is_dir(const struct dirent *e, const char *path)
+{
+#ifdef DT_DIR
+    if (e->d_type != DT_UNKNOWN) return e->d_type == DT_DIR;
+#endif
+    struct stat st; // no d_type (Windows)
+
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
 static void walk(const char *dir, int depth)
 {
     DIR *d = opendir(dir);
@@ -54,9 +65,9 @@ static void walk(const char *dir, int depth)
 
         snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
 
-        if (e->d_type == DT_DIR && depth < 6) {
-            walk(path, depth + 1);
-        } else if (e->d_type != DT_DIR) {
+        if (is_dir(e, path)) {
+            if (depth < 6) walk(path, depth + 1);
+        } else {
             add_line(strdup(path[0] == '.' && path[1] == '/' ? path + 2 : path));
         }
     }

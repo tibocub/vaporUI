@@ -10,6 +10,7 @@ void vui_platform_set_mouse(int level) { (void)level; }
 uint64_t stub_now;           // tests move the clock
 unsigned int stub_ready_mask; // bit i: watched fd i is readable
 uint64_t vui_platform_now_ms(void) { return stub_now; }
+int vui_platform_input_pending(void) { return 0; }
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)
 {
     (void)timeout_ms; (void)fds;

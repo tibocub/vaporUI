@@ -360,7 +360,12 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
 
     switch (event->type) {
     case VUI_EVENT_KEY:
-        // Ctrl-Tab always moves focus, even out of a node that wants Tab
+        // F6 / Shift-F6 always move focus (Ctrl-Tab too, where the terminal sends it), even out of a node that wants Tab
+        if (event->key.key == VUI_KEY_F6 && (event->key.modifiers & ~VUI_MOD_SHIFT) == 0) {
+            move_focus(ui, root, event->key.modifiers & VUI_MOD_SHIFT);
+            return 1;
+        }
+
         if (event->key.key == VUI_KEY_TAB && (event->key.modifiers & ~(VUI_MOD_SHIFT | VUI_MOD_CTRL)) == 0) {
             if (!(event->key.modifiers & VUI_MOD_CTRL) && vui_focus(ui) != NULL
                 && vui_focus(ui)->wants_tab && bubble(vui_focus(ui), ui, event) != NULL) {
@@ -453,22 +458,33 @@ void vui_quit(VuiCtx *ui)
 
 void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata)
 {
+    int dirty = 1;
+
     ui->quit = 0;
 
     while (!ui->quit) {
         VuiEvent event;
 
-        vui_render(ui, root);
+        // Not while more input is waiting: that frame would be replaced at once (drags, key repeat, paste)
+        if (dirty && !vui_platform_input_pending()) {
+            vui_render(ui, root);
+            dirty = 0;
+        }
+
         event = vui_poll_event(ui);
 
         if (event.type == VUI_EVENT_CLOSE) {
             break;
         }
 
-        if (event.type == VUI_EVENT_NONE || (handler != NULL && handler(ui, &event, userdata))) {
+        if (event.type == VUI_EVENT_NONE) {
             continue;
         }
 
-        vui_dispatch(ui, root, &event);
+        dirty = 1;
+
+        if (!vui_dispatch(ui, root, &event) && handler != NULL) {
+            handler(ui, &event, userdata);
+        }
     }
 }

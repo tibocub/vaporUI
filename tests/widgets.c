@@ -482,6 +482,19 @@ int main(void)
     assert(ctx_item == 1 && ui->overlay_count == 0);
     vui_dispatch(ui, root, &(VuiEvent){ .type = VUI_EVENT_NONE });
     node_destroy(root);
+
+    root = node_create();
+    VuiTextarea *ta2 = textarea_create(0);
+    VuiButton *after = button_create("after", NULL);
+    node_add(root, &ta2->node);
+    node_add(root, &after->node);
+    vui_set_focus(ui, &ta2->node);
+    VuiEvent f6 = keyev(VUI_KEY_F6), tabkey = keyev(VUI_KEY_TAB);
+    vui_dispatch(ui, root, &tabkey);
+    assert(vui_focus(ui) == &ta2->node); // Tab belongs to the text area
+    vui_dispatch(ui, root, &f6);
+    assert(vui_focus(ui) == &after->node); // F6 always moves on
+    node_destroy(root);
     vui_shutdown(ui);
 
     puts("widgets: ok");

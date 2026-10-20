@@ -23,6 +23,11 @@ static inline void vtout_start(void)
 {
     const char *ct = getenv("COLORTERM"), *term = getenv("TERM");
 
+    // One write per frame: stdio on a console is unbuffered or line-buffered by default, which is
+    // what made drags crawl on Windows.
+    fflush(stdout);
+    setvbuf(stdout, NULL, _IOFBF, 1 << 16);
+
     vui_set_color_depth(ct != NULL && (strstr(ct, "truecolor") || strstr(ct, "24bit")) ? 24
         : term != NULL && strstr(term, "256") ? 8 : 4);
 
@@ -37,6 +42,7 @@ static inline void vtout_stop(void)
 {
     fputs("\033[?25h\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[>4;0m\033[<u\033[?1049l", stdout);
     fflush(stdout);
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 }
 
 static inline void vtout_set_mouse(int level)

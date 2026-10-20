@@ -15,7 +15,8 @@
 //   - File / View: click a title, or Tab to the bar (Left/Right pick, Enter/Down opens); in an open
 //     menu Left/Right jump to the neighbour, Enter or a click picks, Escape closes it
 //   - right-click on the desktop opens a context menu with the themes (kept on screen near edges)
-//   - the bottom bar names the theme; Ctrl-C quits
+//   - the bottom bar names the theme; Ctrl-C copies the selection in a text area, and quits when nothing is selected
+//   - F6 / Shift-F6 move focus between windows even while a text area has focus (Tab inserts a tab there)
 
 #include <stdio.h>
 #include <time.h>

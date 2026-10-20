@@ -150,6 +150,15 @@ uint64_t vui_platform_now_ms(void)
     return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
+// True when a read of the terminal wouldn't block: the loop skips drawing frames that newer input
+// would immediately replace (drags, key repeat).
+int vui_platform_input_pending(void)
+{
+    struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
+
+    return resize_pending || (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN));
+}
+
 // Waits up to timeout_ms (-1 = forever) for terminal input or any of the
 // n extra fds; ready[i] is set for the fds that are readable.
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)

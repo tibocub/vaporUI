@@ -18,8 +18,14 @@ is stable).
 - [widgets.md](docs/widgets.md): widget reference and conventions for adding one
 - [limitations.md](docs/limitations.md): everything that doesn't work yet, in one place
 
+## Building
+- **Linux / macOS / BSD:** `make` (needs `gcc`, `make`).
+- **Windows, native:** install [w64devkit](https://github.com/skeeto/w64devkit) (a zip: unpack, run `w64devkit.exe`) or MSYS2 (`pacman -S mingw-w64-ucrt-x86_64-gcc make`), then `make` in the repo. `make` detects Windows and builds `.exe` files in `build/`.
+- **Windows from Linux:** `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`.
+- Nothing else is needed: no NuttX, no external libraries. The Windows `.exe` files need Windows 10 or newer (VT console).
+
 ## Examples and tests
-`make` builds every `examples/*.c` into `build/` (`make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc` cross-builds the Windows ones). They are both the
+`make` builds every `examples/*.c` into `build/` They are both the
 how-to for building UIs with vaporUI and the manual regression suite:
 each file's header comment lists what to verify, and every example
 must keep working as features land. New feature or widget -> new

@@ -412,9 +412,12 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event);
 void vui_set_focus(VuiCtx *ui, VuiNode *node);
 VuiNode *vui_focus(VuiCtx *ui);
 
-// The whole loop: render, wait for an event, offer it to `handler` first
-// (NULL = none; return 1 to consume it), else vui_dispatch() it. Returns
-// after vui_quit(). Write the loop yourself when you need more control.
+// The whole loop: render (skipped while more input is already waiting), wait for an
+// event, vui_dispatch() it, and offer it to `handler` only if no widget used it
+// (NULL = none). Widgets get first refusal, so a text area keeps Ctrl-C for "copy" and
+// lets it through to your handler (quit) when nothing is selected. To take a key
+// before a widget does, wrap its on_event (see docs/widgets.md). Returns after
+// vui_quit() or when the terminal closes. Write the loop yourself for more control.
 typedef int (*VuiAppHandler)(VuiCtx *ui, const VuiEvent *event, void *userdata);
 
 void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata);

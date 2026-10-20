@@ -1,17 +1,20 @@
 CC := gcc
 CFLAGS := -Wall
 
-# make                                              -> POSIX (Linux/macOS/BSD)
-# make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc        -> Windows .exe (picker and event-loop are POSIX-only for now)
+# make                                              -> POSIX (Linux/macOS/BSD); on Windows (MSYS2, w64devkit) -> Windows .exe
+# make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc        -> cross-build Windows .exe from Linux
+ifeq ($(OS),Windows_NT)
+TARGET ?= WIN32
+endif
 TARGET ?= POSIX
 POSIX := src/platform/posix.c
 WIN32 := src/platform/win32.c
 ifeq ($(TARGET),WIN32)
 EXE := .exe
-SKIP := examples/picker.c examples/event-loop.c
+SKIP := examples/event-loop.c
 endif
 
-SRCS := $(shell find src -maxdepth 2 -type f -name "*.c" -not -path "src/platform/*")
+SRCS := $(wildcard src/*.c src/widgets/*.c)
 EXAMPLES := $(patsubst examples/%.c,build/%$(EXE),$(filter-out $(SKIP),$(wildcard examples/*.c)))
 
 .PHONY: all test clean
