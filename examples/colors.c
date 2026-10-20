@@ -9,12 +9,14 @@
 //     (stretch / start / center / end) with the same two buttons; resize to see them follow
 //   - Ctrl-C quits
 
+#include <stdint.h>
+
 #include "../include/vaporui.h"
 
 static void draw_swatches(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiRect r = node->rect;
-    int mode = (int)(long)userdata;
+    int mode = (int)(intptr_t)userdata;
 
     for (unsigned int x = 0; x < r.width; x++) {
         VuiColor c;
@@ -39,7 +41,7 @@ static VuiNode *swatch(VuiNode *parent, int mode)
 
     n->basis = 1;
     n->draw = draw_swatches;
-    n->userdata = (void *)(long)mode;
+    n->userdata = (void *)(intptr_t)mode;
     node_add(parent, n);
 
     return n;

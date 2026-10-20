@@ -19,7 +19,7 @@ is stable).
 - [limitations.md](docs/limitations.md): everything that doesn't work yet, in one place
 
 ## Examples and tests
-`make` builds every `examples/*.c` into `build/`. They are both the
+`make` builds every `examples/*.c` into `build/` (`make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc` cross-builds the Windows ones). They are both the
 how-to for building UIs with vaporUI and the manual regression suite:
 each file's header comment lists what to verify, and every example
 must keep working as features land. New feature or widget -> new
@@ -82,6 +82,10 @@ Controls:
 - [x] mouse (xterm SGR 1006: press/release/drag/wheel/hover + modifiers; opt-in via vui_set_mouse)
 - [x] bracketed paste (PASTE_START, TEXT..., PASTE_END -- streamed, no buffer)
 - [x] xterm modifyOtherKeys + kitty protocol (Ctrl+accent/symbol on AZERTY etc.); legacy terminals can't send these, see docs/input.md
+
+Windows backend (`src/platform/win32.c`):
+- [WIP] VT console mode, raw input, resize events, size: compiles with mingw and starts under Wine; untested on a real Windows console
+- [ ] fd watches (pipes, sockets)
 
 POSIX backend (linux/macOS/BSD/NuttX):
 - [x] terminal resolution

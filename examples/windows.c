@@ -140,6 +140,18 @@ static void quit_dialog(VuiNode *button)
     vui_overlay_add(vui_ctx(), &frame->node, (VuiRect){ 25, 8, 24, 5 }, VUI_OVERLAY_MODAL | VUI_OVERLAY_DISMISS);
 }
 
+static int handler(VuiCtx *ui, const VuiEvent *e, void *userdata)
+{
+    (void)userdata;
+
+    if (e->type == VUI_EVENT_KEY && e->key.key == VUI_KEY_CHAR && e->key.character == 'c' && e->key.modifiers == VUI_MOD_CTRL) {
+        vui_quit(ui);
+        return 1;
+    }
+
+    return 0;
+}
+
 static VuiButton *add_button(VuiNode *parent, const char *label, void (*on_click)(VuiNode *))
 {
     VuiButton *b = button_create(label, on_click);
@@ -211,7 +223,7 @@ int main(void)
     node_add(root, &bottom->node);
 
     vui_set_focus(ui, desktop->children[0]);
-    vui_run(ui, root, NULL, NULL);
+    vui_run(ui, root, handler, NULL);
 
     node_destroy(root);
     vui_shutdown(ui);

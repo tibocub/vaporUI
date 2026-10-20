@@ -13,17 +13,7 @@
 #include "../../include/vaporui.h"
 #include "../input.h"
 #include "../ctx.h"
-
-// How long to wait for the rest of an escape sequence once a lone
-// ESC byte has come in, before giving up and reporting a standalone
-// Escape key. Same problem ncurses (ESCDELAY), vim (ttimeoutlen) and
-// tmux (escape-time) all solve the same way: escape sequences from a
-// real terminal arrive as a burst, not typed by hand, so a short
-// bounded wait tells a real Escape keypress apart from the start of
-// e.g. an arrow key without perceptibly delaying either one.
-#define VUI_ESCAPE_TIMEOUT_MS 25
-
-static void osc52_copy(const char *utf8);
+#include "vtout.h"
 
 static struct termios original_termios;
 static int tty_fd = STDIN_FILENO;   // the terminal: stdin, or /dev/tty when stdin is piped
@@ -103,29 +93,16 @@ int vui_platform_init(void)
         return -1;
     }
 
-    {
-        const char *ct = getenv("COLORTERM"), *term = getenv("TERM");
-
-        vui_set_color_depth(ct != NULL && (strstr(ct, "truecolor") || strstr(ct, "24bit")) ? 24
-            : term != NULL && strstr(term, "256") ? 8 : 4);
-    }
-
     vui_input_reset(&input_decoder);
-    vui_clipboard_hook = osc52_copy;
-
-    // kitty keyboard protocol ('disambiguate') and xterm modifyOtherKeys
-    // level 1: let terminals that support either report Ctrl/Alt/Shift on
-    // any key. Others ignore them.
-    fputs("\033[?1049h\033[?25l\033[>1u\033[>4;1m\033[?2004h", stdout); // alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), + xterm modifyOtherKeys 1, bracketed paste
-    fflush(stdout);
+    vui_clipboard_hook = vtout_osc52_copy;
+    vtout_start();
 
     return 0; 
 }
 
 void vui_platform_shutdown(void)
 {
-    fputs("\033[?25h\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[>4;0m\033[<u\033[?1049l", stdout);
-    fflush(stdout);
+    vtout_stop();
 
     tcsetattr(
         tty_fd,
@@ -136,39 +113,9 @@ void vui_platform_shutdown(void)
     release_tty();
 }
 
-static void osc52_copy(const char *utf8)
-{
-    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    size_t n = strlen(utf8);
-
-    fputs("\033]52;c;", stdout);
-
-    for (size_t i = 0; i < n; i += 3) {
-        unsigned int v = (unsigned char)utf8[i] << 16;
-
-        if (i + 1 < n) v |= (unsigned char)utf8[i + 1] << 8;
-        if (i + 2 < n) v |= (unsigned char)utf8[i + 2];
-
-        putchar(b64[v >> 18]);
-        putchar(b64[(v >> 12) & 63]);
-        putchar(i + 1 < n ? b64[(v >> 6) & 63] : '=');
-        putchar(i + 2 < n ? b64[v & 63] : '=');
-    }
-
-    fputs("\007", stdout);
-    fflush(stdout);
-}
-
 void vui_platform_set_mouse(int level)
 {
-    // 1000 clicks+wheel, 1002 drag motion, 1003 all motion, 1006 SGR encoding (no 223 col limit)
-    fputs("\033[?1003l\033[?1002l\033[?1000l", stdout);
-
-    if (level > 0) {
-        fputs(level > 1 ? "\033[?1003h\033[?1006h" : "\033[?1002h\033[?1000h\033[?1006h", stdout);
-    }
-
-    fflush(stdout);
+    vtout_set_mouse(level);
 }
 
 int vui_platform_get_size(VuiSize *size)

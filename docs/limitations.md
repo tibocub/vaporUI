@@ -34,9 +34,13 @@ Current limits, in one place. Update this file when one is lifted.
 the kitty protocol; no X10 mouse; no focus events; the Escape key has a 25 ms disambiguation delay.
 
 **Platforms**
-- Only the POSIX backend exists (Linux/macOS/BSD; NuttX untested). When stdin or stdout is a pipe the backend uses `/dev/tty`
-  for keys and drawing (so `find | picker | xargs ...` works) and leaves stdout alone; it fails to init if there is no controlling terminal. Windows needs either a terminal
-  that speaks VT sequences (Windows Terminal) with a Windows raw-mode backend, or a new backend: not started.
+- Backends: POSIX (Linux/macOS/BSD; NuttX untested) and Windows (`src/platform/win32.c`, VT console mode; cross-built with
+  `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`). The Windows one has only been compiled and started under Wine (input loop and Ctrl-C
+  verified; Wine's console doesn't render VT faithfully, so the drawing is unverified), not run on a real Windows console.
+  Windows differences: no fd watches (timers work), `picker` and `event-loop` aren't built (POSIX-only calls).
+  Consoles without VT support (pre-Windows 10) are not supported. The POSIX one is the reference.
+- When stdin or stdout is a pipe, both backends draw on and read from the terminal (`/dev/tty`, `CONIN$`/`CONOUT$`) and leave
+  stdout alone (so `find | picker | xargs ...` works); init fails if there is no terminal at all.
 - vaporOS: the library only emits/reads standard VT sequences, so a terminal implementing the
   mouse, paste and key modes listed in `input.md` gets full functionality.
 
