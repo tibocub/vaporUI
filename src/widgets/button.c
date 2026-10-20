@@ -10,7 +10,7 @@ static void button_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiButton *b = (VuiButton *)node;
     VuiRect r = node->rect;
-    VuiStyle style = { .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLACK };
+    VuiStyle style = vui_theme()->text;
     unsigned int len = vui_str_width(b->label) + 4; // "[ " + label + " ]"
     unsigned int x = r.x + (r.width > len ? (r.width - len) / 2 : 0);
 
@@ -18,9 +18,9 @@ static void button_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 
     // the whole rect is clickable, so the whole rect shows the state
     if (node->focused) {
-        style = (VuiStyle){ .attr = VUI_ATTR_REVERSE | VUI_ATTR_BOLD };
+        style = vui_theme()->focus;
     } else if (node->hovered) {
-        style = (VuiStyle){ .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLUE, .attr = VUI_ATTR_BOLD };
+        style = vui_theme()->hover;
     }
 
     scr_fill(scr, r, ' ', style);

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -65,6 +66,13 @@ int vui_platform_init(void)
     if (sigaction(SIGWINCH, &action, NULL) == -1) {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
         return -1;
+    }
+
+    {
+        const char *ct = getenv("COLORTERM"), *term = getenv("TERM");
+
+        vui_set_color_depth(ct != NULL && (strstr(ct, "truecolor") || strstr(ct, "24bit")) ? 24
+            : term != NULL && strstr(term, "256") ? 8 : 4);
     }
 
     vui_input_reset(&input_decoder);

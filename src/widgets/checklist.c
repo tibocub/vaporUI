@@ -23,12 +23,13 @@ static void checklist_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 
     for (unsigned int row = 0; row < r.height && l->top + row < l->count; row++) {
         unsigned int i = l->top + row;
-        VuiStyle style = { 0 };
+        VuiStyle style = vui_theme()->text;
 
         if (i == l->cursor) {
-            style.attr = node->focused ? VUI_ATTR_REVERSE : VUI_ATTR_BOLD;
+            if (node->focused) style = vui_theme()->focus;
+            else style.attr |= VUI_ATTR_BOLD;
         } else if (node->hovered && i == l->hover_row) {
-            style = (VuiStyle){ .fg = VUI_COLOR_WHITE, .bg = VUI_COLOR_BLUE };
+            style = vui_theme()->hover;
         }
 
         scr_fill(scr, (VuiRect){ r.x, r.y + row, r.width, 1 }, ' ', style);

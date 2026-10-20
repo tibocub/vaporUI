@@ -52,6 +52,7 @@ VuiBorder *border_create(const char *title)
 
     if (b != NULL) {
         b->title = title;
+        b->style = vui_theme()->border;
         node_pad(&b->node, 1, 1, 1, 1);
         b->node.draw = border_draw;
     }

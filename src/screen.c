@@ -198,6 +198,63 @@ void scr_clear(VuiScreen *scr, VuiStyle style)
     fill(scr->back, scr->width * scr->height, (VuiCell){ .codepoint = ' ', .style = style });
 }
 
+static int color_depth = 24;
+
+void vui_set_color_depth(int depth)
+{
+    color_depth = depth;
+}
+
+// SGR parameter for one color; base is 30 (foreground) or 40 (background).
+// Colors beyond the terminal's depth are approximated.
+static int color_sgr(char *buf, int size, VuiColor c, int base)
+{
+    unsigned int r = 0, g = 0, b = 0;
+
+    if (c <= 16) {
+        return c <= 8 ? snprintf(buf, size, ";%d", base + (int)c - 1) : snprintf(buf, size, ";%d", base + 60 + (int)c - 9);
+    }
+
+    if (c & 0x02000000u) {
+        unsigned int n = c & 0xff;
+
+        if (color_depth >= 8) {
+            return snprintf(buf, size, ";%d;5;%u", base + 8, n);
+        }
+
+        // 16 colors: take a palette entry's nearest basic color from its cube coordinates
+        if (n < 16) {
+            return color_sgr(buf, size, n + 1, base);
+        }
+
+        r = n >= 232 ? (n - 232) * 10 : ((n - 16) / 36) * 51;
+        g = n >= 232 ? r : (((n - 16) / 6) % 6) * 51;
+        b = n >= 232 ? r : ((n - 16) % 6) * 51;
+    } else {
+        r = (c >> 16) & 0xff;
+        g = (c >> 8) & 0xff;
+        b = c & 0xff;
+    }
+
+    if (color_depth >= 24) {
+        return snprintf(buf, size, ";%d;2;%u;%u;%u", base + 8, r, g, b);
+    }
+
+    if (color_depth >= 8) {
+        if (r == g && g == b) {
+            return snprintf(buf, size, ";%d;5;%u", base + 8, r < 8 ? 16 : r > 248 ? 231 : 232 + (r - 8) / 10);
+        }
+
+        return snprintf(buf, size, ";%d;5;%u", base + 8, 16 + 36 * ((r * 5 + 127) / 255) + 6 * ((g * 5 + 127) / 255) + (b * 5 + 127) / 255);
+    }
+
+    {
+        unsigned int index = (r > 127) | (g > 127) << 1 | (b > 127) << 2, bright = r > 191 || g > 191 || b > 191;
+
+        return color_sgr(buf, size, index + 1 + (bright && index ? 8 : 0), base);
+    }
+}
+
 static int style_sgr(VuiStyle style, char *buf, int bufsize)
 {
     int n = snprintf(buf, bufsize, "\033[0");
@@ -205,8 +262,8 @@ static int style_sgr(VuiStyle style, char *buf, int bufsize)
     if (style.attr & VUI_ATTR_BOLD)      n += snprintf(buf + n, bufsize - n, ";1");
     if (style.attr & VUI_ATTR_UNDERLINE) n += snprintf(buf + n, bufsize - n, ";4");
     if (style.attr & VUI_ATTR_REVERSE)   n += snprintf(buf + n, bufsize - n, ";7");
-    if (style.fg != VUI_COLOR_DEFAULT)   n += snprintf(buf + n, bufsize - n, ";%d", 30 + (style.fg - 1));
-    if (style.bg != VUI_COLOR_DEFAULT)   n += snprintf(buf + n, bufsize - n, ";%d", 40 + (style.bg - 1));
+    if (style.fg != VUI_COLOR_DEFAULT)   n += color_sgr(buf + n, bufsize - n, style.fg, 30);
+    if (style.bg != VUI_COLOR_DEFAULT)   n += color_sgr(buf + n, bufsize - n, style.bg, 40);
 
     n += snprintf(buf + n, bufsize - n, "m");
 
@@ -241,7 +298,7 @@ void scr_flush(VuiScreen *scr)
             }
 
             if (!have_style || !style_eq(back->style, last_style)) {
-                char sgr[32];
+                char sgr[64];
                 int n = style_sgr(back->style, sgr, sizeof(sgr));
                 fwrite(sgr, 1, n, stdout);
                 last_style = back->style;

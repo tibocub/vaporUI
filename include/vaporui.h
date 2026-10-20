@@ -136,7 +136,12 @@ typedef struct {
 // vui_screen() returns the one owned by ui -- sized and resized
 // automatically with the terminal, no separate lifecycle to manage.
 
-typedef enum {
+// A color is one 32-bit value: 0 = the terminal's default, 1..16 = the ANSI
+// colors, or VUI_COLOR256(n) / VUI_RGB(r, g, b). Colors the terminal can't
+// show are approximated (see vui_set_color_depth).
+typedef uint32_t VuiColor;
+
+enum {
     VUI_COLOR_DEFAULT = 0,
     VUI_COLOR_BLACK,
     VUI_COLOR_RED,
@@ -146,7 +151,22 @@ typedef enum {
     VUI_COLOR_MAGENTA,
     VUI_COLOR_CYAN,
     VUI_COLOR_WHITE,
-} VuiColor;
+    VUI_COLOR_BRIGHT_BLACK, // = gray
+    VUI_COLOR_BRIGHT_RED,
+    VUI_COLOR_BRIGHT_GREEN,
+    VUI_COLOR_BRIGHT_YELLOW,
+    VUI_COLOR_BRIGHT_BLUE,
+    VUI_COLOR_BRIGHT_MAGENTA,
+    VUI_COLOR_BRIGHT_CYAN,
+    VUI_COLOR_BRIGHT_WHITE,
+};
+
+#define VUI_COLOR256(n) (0x02000000u | ((n) & 0xff))
+#define VUI_RGB(r, g, b) (0x01000000u | (((r) & 0xff) << 16) | (((g) & 0xff) << 8) | ((b) & 0xff))
+
+// 4 = 16 colors, 8 = 256, 24 = truecolor. Detected from COLORTERM / TERM
+// at init; call it to override (e.g. from a --colors flag).
+void vui_set_color_depth(int depth);
 
 typedef enum {
     VUI_ATTR_NONE      = 0,
@@ -167,6 +187,28 @@ typedef struct {
 } VuiCell;
 
 typedef struct VuiScreen VuiScreen;
+
+// -- Theme --
+//
+// The styles the built-in widgets draw with. vui_theme() returns the one
+// shared theme: change fields to restyle every widget at once (e.g. call
+// it once at startup). Zero-initialised VuiStyle fields mean "terminal
+// default".
+typedef struct {
+    VuiStyle text;      // plain content
+    VuiStyle focus;     // focused button, list cursor
+    VuiStyle hover;     // pointer over a button / list row
+    VuiStyle selection; // selected text
+    VuiStyle border;    // frames
+    VuiStyle title;     // window title bar
+    VuiStyle title_off; // title bar of a window that isn't on top
+    VuiStyle popup;     // popups, drop-downs, menus
+    VuiStyle bar;       // menu / status bars
+    VuiStyle scroll;    // scrollbar track
+    VuiStyle thumb;     // scrollbar handle
+} VuiTheme;
+
+VuiTheme *vui_theme(void);
 
 VuiScreen *vui_screen(VuiCtx *ui);
 

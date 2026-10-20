@@ -587,7 +587,7 @@ static void textarea_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiTextarea *t = (VuiTextarea *)node;
     VuiRect r = node->rect;
-    VuiStyle plain = {0}, inverse = { .attr = VUI_ATTR_REVERSE };
+    VuiStyle plain = vui_theme()->text, inverse = vui_theme()->selection;
     unsigned int lo = sel_lo(t), hi = sel_hi(t), s;
 
     (void)userdata;
