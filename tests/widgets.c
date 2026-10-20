@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../include/vaporui.h"
+#include "../src/ctx.h"
 
 static int submitted, changes;
 
@@ -19,6 +20,21 @@ static void key(VuiNode *n, VuiKey k, VuiModifiers m, VuiCodepoint c)
 static void type(VuiNode *n, const char *s) { for (; *s; s++) text(n, (unsigned char)*s); }
 
 static const char *get(VuiInput *in) { static char buf[64]; input_get_text(in, buf, sizeof buf); return buf; }
+
+extern uint64_t stub_now;
+extern unsigned int stub_ready_mask;
+
+static int ticks, reads, closed;
+static void on_tick(VuiCtx *ui, void *ud) { (void)ui; (void)ud; ticks++; }
+static void on_read(VuiCtx *ui, int fd, void *ud) { (void)ud; reads++; vui_unwatch_fd(ui, fd); }
+static void on_close(VuiNode *n) { (void)n; closed++; }
+static const char *row_text(VuiList *l, unsigned int i) { (void)l; static char b[16]; snprintf(b, sizeof b, "row %u", i); return b; }
+
+static VuiEvent mouse(VuiMouseButton b, VuiMouseAction a, unsigned int x, unsigned int y)
+{
+    return (VuiEvent){ .type = VUI_EVENT_MOUSE, .mouse = { b, a, 0, x, y } };
+}
+static VuiEvent keyev(VuiKey k) { return (VuiEvent){ .type = VUI_EVENT_KEY, .key = { k, 0, 0 } }; }
 
 int main(void)
 {
@@ -324,6 +340,121 @@ int main(void)
     node_layout(sc, (VuiRect){ 0, 0, 10, 6 });
     assert(sc->scroll == 14 && sc->children[9]->rect.y == 4 && sc->children[0]->rect.y == -14);
     node_destroy(sc);
+
+    // timers and fd watches
+    VuiCtx *ui = vui_init();
+    assert(ui != NULL && vui_ctx() == ui);
+    int repeating = vui_timer(ui, 100, 1, on_tick, NULL), once = vui_timer(ui, 250, 0, on_tick, NULL);
+    assert(repeating && once && repeating != once);
+    stub_now = 50;
+    assert(vui_poll_event(ui).type == VUI_EVENT_NONE && ticks == 0);
+    stub_now = 100;
+    assert(vui_poll_event(ui).type == VUI_EVENT_WAKE && ticks == 1);
+    stub_now = 300;
+    vui_poll_event(ui);
+    assert(ticks == 3); // repeating (again) + one-shot
+    vui_timer_cancel(ui, repeating);
+    stub_now = 1000;
+    assert(vui_poll_event(ui).type == VUI_EVENT_NONE && ticks == 3);
+    assert(vui_watch_fd(ui, 7, on_read, NULL) == 0);
+    stub_ready_mask = 1;
+    assert(vui_poll_event(ui).type == VUI_EVENT_WAKE && reads == 1); // callback unwatched itself
+    assert(vui_poll_event(ui).type == VUI_EVENT_NONE && reads == 1);
+    stub_ready_mask = 0;
+
+    // overlays: modal focus scope, dismiss, focus restore, raise, window drag
+    VuiNode *root = node_create();
+    VuiButton *under = button_create("under", NULL);
+    node_add(root, &under->node);
+    vui_set_focus(ui, &under->node);
+
+    VuiNode *dialog = node_create();
+    VuiButton *d1 = button_create("one", NULL), *d2 = button_create("two", NULL);
+    dialog->direction = VUI_DIR_COLUMN;
+    node_add(dialog, &d1->node);
+    node_add(dialog, &d2->node);
+    assert(vui_overlay_add(ui, dialog, (VuiRect){ 77, 23, 0, 0 }, VUI_OVERLAY_MODAL | VUI_OVERLAY_DISMISS) == 0);
+    assert(dialog->rect.width == 7 && dialog->rect.x == 73 && dialog->rect.y == 22); // measured, pushed back on screen
+    assert(vui_focus(ui) == &d1->node);
+    VuiEvent tab = keyev(VUI_KEY_TAB);
+    vui_dispatch(ui, root, &tab);
+    assert(vui_focus(ui) == &d2->node);
+    vui_dispatch(ui, root, &tab);
+    assert(vui_focus(ui) == &d1->node); // wraps inside the modal, never reaches `under`
+    VuiEvent esc = keyev(VUI_KEY_ESCAPE);
+    assert(vui_dispatch(ui, root, &esc) == 1 && ui->overlay_count == 0);
+    assert(vui_focus(ui) == &under->node);
+    vui_dispatch(ui, root, &(VuiEvent){ .type = VUI_EVENT_NONE }); // frees the removed overlay
+
+    dialog = node_create();
+    VuiButton *d3 = button_create("x", NULL);
+    node_add(dialog, &d3->node);
+    vui_overlay_add(ui, dialog, (VuiRect){ 10, 10, 5, 1 }, VUI_OVERLAY_DISMISS);
+    VuiEvent click = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 0, 0);
+    assert(vui_dispatch(ui, root, &click) == 1 && ui->overlay_count == 0); // click outside dismisses and is consumed
+    vui_dispatch(ui, root, &(VuiEvent){ .type = VUI_EVENT_NONE });
+
+    VuiWindow *w1 = window_create("one"), *w2 = window_create("two");
+    w1->on_close = on_close;
+    vui_overlay_add(ui, &w1->node, (VuiRect){ 5, 5, 20, 8 }, 0);
+    vui_overlay_add(ui, &w2->node, (VuiRect){ 10, 8, 20, 8 }, 0);
+    assert(ui->overlays[1].node == &w2->node);
+    click = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 6, 6); // only w1 is under (6,6)
+    vui_dispatch(ui, root, &click);
+    assert(ui->overlays[1].node == &w1->node); // raised
+    click = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 8, 5); // title bar of w1
+    vui_dispatch(ui, root, &click);
+    VuiEvent drag = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_MOVE, 18, 9);
+    vui_dispatch(ui, root, &drag);
+    assert(w1->node.rect.x == 15 && w1->node.rect.y == 9);
+    VuiEvent up = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_RELEASE, 18, 9);
+    vui_dispatch(ui, root, &up);
+    click = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 15 + 19, 9 + 7); // bottom-right corner of w1
+    vui_dispatch(ui, root, &click);
+    drag = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_MOVE, 40, 20);
+    vui_dispatch(ui, root, &drag);
+    assert(w1->node.rect.width == 26 && w1->node.rect.height == 12);
+    up = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_RELEASE, 40, 20);
+    vui_dispatch(ui, root, &up);
+    click = mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 15 + 25 - 1, 9); // [x] of w1
+    vui_dispatch(ui, root, &click);
+    assert(closed == 1 && ui->overlay_count == 2);
+    vui_overlay_remove(ui, &w1->node);
+    vui_overlay_remove(ui, &w2->node);
+    assert(ui->overlay_count == 0);
+
+    // virtual list
+    VuiList *list = list_create(100, row_text);
+    list->node.rect = (VuiRect){ 0, 0, 10, 5 };
+    vui_set_focus(ui, &list->node);
+    for (int i = 0; i < 7; i++) { VuiEvent down = keyev(VUI_KEY_DOWN); list->node.on_event(&list->node, ui, &down); }
+    assert(list->cursor == 7 && list->follow);
+    VuiEvent end = keyev(VUI_KEY_END), pgup = keyev(VUI_KEY_PAGE_UP);
+    list->node.on_event(&list->node, ui, &end);
+    assert(list->cursor == 99);
+    list->node.on_event(&list->node, ui, &pgup);
+    assert(list->cursor == 95);
+    list_set_count(list, 10);
+    assert(list->cursor == 9 && list->follow);
+    node_destroy(&list->node);
+
+    // scroll container: focusing a child scrolls it into view
+    root->direction = VUI_DIR_COLUMN;
+    ui->root = NULL; ui->focus = NULL; // forget what we are about to free
+    node_destroy(root);
+    root = scroll_create();
+    VuiButton *btns[6];
+    for (int i = 0; i < 6; i++) { btns[i] = button_create("b", NULL); btns[i]->node.basis = 3; node_add(root, &btns[i]->node); }
+    node_layout(root, (VuiRect){ 0, 0, 10, 6 });
+    assert(root->content == 18 && root->scroll == 0);
+    vui_set_focus(ui, &btns[3]->node);
+    node_layout(root, (VuiRect){ 0, 0, 10, 6 });
+    assert(root->scroll == 6 && btns[3]->node.rect.y == 3);
+    vui_set_focus(ui, &btns[0]->node);
+    node_layout(root, (VuiRect){ 0, 0, 10, 6 });
+    assert(root->scroll == 0);
+    node_destroy(root);
+    vui_shutdown(ui);
 
     puts("widgets: ok");
     return 0;

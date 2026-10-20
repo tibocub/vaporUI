@@ -7,6 +7,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 #include "../../include/vaporui.h"
 #include "../input.h"
@@ -158,16 +159,28 @@ void vui_platform_clear(void)
     fflush(stdout);
 }
 
-VuiEvent vui_platform_poll_event(void)
+uint64_t vui_platform_now_ms(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+// Waits up to timeout_ms (-1 = forever) for terminal input or any of the
+// n extra fds; ready[i] is set for the fds that are readable.
+VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)
 {
     unsigned char c;
     ssize_t result;
-    struct pollfd pfd;
-    int timeout_ms;
+    struct pollfd pfd[1 + VUI_MAX_WATCH];
+    int esc = vui_input_pending_escape(&input_decoder), esc_first;
 
     VuiEvent event = {
         .type = VUI_EVENT_NONE
     };
+
+    memset(ready, 0, n);
 
     if (resize_pending) {
         VuiSize size;
@@ -182,14 +195,24 @@ VuiEvent vui_platform_poll_event(void)
         return event;
     }
 
-    pfd.fd = STDIN_FILENO;
-    pfd.events = POLLIN;
-    timeout_ms = vui_input_pending_escape(&input_decoder)
-        ? VUI_ESCAPE_TIMEOUT_MS
-        : -1;
+    pfd[0].fd = STDIN_FILENO;
+    pfd[0].events = POLLIN;
+
+    for (unsigned int i = 0; i < n; i++) {
+        pfd[1 + i].fd = fds[i];
+        pfd[1 + i].events = POLLIN;
+    }
+
+    esc_first = esc && (timeout_ms < 0 || VUI_ESCAPE_TIMEOUT_MS <= timeout_ms);
+
+    if (esc_first) {
+        timeout_ms = VUI_ESCAPE_TIMEOUT_MS;
+    }
 
     // Handles resize when poll is blocked
-    if (poll(&pfd, 1, timeout_ms) == -1) {
+    result = poll(pfd, 1 + n, timeout_ms);
+
+    if (result == -1) {
         if (errno == EINTR && resize_pending) {
             VuiSize size;
 
@@ -204,15 +227,17 @@ VuiEvent vui_platform_poll_event(void)
         return event;
     }
 
-    if (!(pfd.revents & POLLIN)) {
-        // Timed out: no more bytes came, so a pending escape
-        // sequence was actually just a standalone ESC keypress.
-        return vui_input_timeout(&input_decoder);
+    for (unsigned int i = 0; i < n; i++) {
+        ready[i] = (pfd[1 + i].revents & (POLLIN | POLLHUP | POLLERR)) != 0;
     }
 
-    result = read(STDIN_FILENO, &c, 1);
+    if (!(pfd[0].revents & POLLIN)) {
+        // Timed out: no more bytes came, so a pending escape
+        // sequence was actually just a standalone ESC keypress.
+        return result == 0 && esc_first ? vui_input_timeout(&input_decoder) : event;
+    }
 
-    if (result <= 0) {
+    if (read(STDIN_FILENO, &c, 1) <= 0) {
         return event;
     }
 

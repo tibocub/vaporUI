@@ -19,7 +19,8 @@ typedef enum {
     VUI_EVENT_RESIZE,
     VUI_EVENT_MOUSE,
     VUI_EVENT_PASTE_START, // pasted content follows as VUI_EVENT_TEXT (newlines as '\n')
-    VUI_EVENT_PASTE_END
+    VUI_EVENT_PASTE_END,
+    VUI_EVENT_WAKE // a watched fd or timer callback ran: redraw if the state it changed is shown
 } VuiEventType;
 
 typedef enum {
@@ -103,6 +104,9 @@ typedef struct {
 } VuiEvent;
 
 VuiCtx*vui_init(void);
+// The ui made by vui_init(), for callbacks that have no ui argument (e.g.
+// a button's on_click opening a window). There is one terminal, so one ui.
+VuiCtx *vui_ctx(void);
 void vui_shutdown(VuiCtx *ui);
 
 unsigned int vui_width(VuiCtx *ui);
@@ -111,7 +115,30 @@ unsigned int vui_height(VuiCtx *ui);
 void vui_clear(VuiCtx *ui);
 void vui_flush(VuiCtx *ui);
 
+// Blocks until there is input, a resize, or a watched fd / timer fires
+// (VUI_EVENT_WAKE, after its callback ran). May also return VUI_EVENT_NONE
+// (e.g. half an escape sequence arrived): just poll again.
 VuiEvent vui_poll_event(VuiCtx *ui);
+
+// -- Event loop --
+//
+// Extra sources for vui_poll_event(): file descriptors (a pty or pipe of a
+// child process, a socket) and timers. Callbacks run on the polling thread
+// and may add/remove watches and timers, including their own. Up to 16 of
+// each.
+
+typedef void (*VuiFdCallback)(VuiCtx *ui, int fd, void *userdata);
+typedef void (*VuiTimerCallback)(VuiCtx *ui, void *userdata);
+
+// Calls cb whenever fd is readable (or hung up -- read() tells you which).
+// Watching an fd again replaces its callback. Returns 0, or -1 if full.
+int vui_watch_fd(VuiCtx *ui, int fd, VuiFdCallback cb, void *userdata);
+void vui_unwatch_fd(VuiCtx *ui, int fd);
+
+// Calls cb after `ms` milliseconds, every `ms` if `repeat`. Returns an id
+// for vui_timer_cancel(), or 0 if full.
+int vui_timer(VuiCtx *ui, unsigned int ms, int repeat, VuiTimerCallback cb, void *userdata);
+void vui_timer_cancel(VuiCtx *ui, int id);
 
 // Opt-in: reporting mouse input disables the terminal's own text
 // selection. level 1: clicks, drag, wheel. level 2: also plain motion,
@@ -313,6 +340,7 @@ struct VuiNode {
     int wants_tab;  // when focused, offer Tab to on_event() before moving focus
     int focused;    // set by vui_set_focus(), read it in draw callbacks
     int hovered;    // pointer is over this node or a descendant (needs vui_set_mouse(ui, 2))
+    int active;     // set by vui_render() on the topmost overlay
 
     // internal -- use node_add()/node_remove(), don't touch directly
     VuiNode *parent;
@@ -355,10 +383,41 @@ const char *vui_clipboard_get(void); // never NULL
 // Each is offered to on_event() up the parent chain until one returns 1.
 // Returns 1 if some node handled it.
 
+// -- Overlays --
+//
+// Floating layers drawn over the root, in z-order, last = on top: windows,
+// popups, drop-downs, dialogs. An overlay sits at `rect` (x, y, size; a 0
+// width or height is measured from the content, and the rect is moved
+// back on screen if it overflows) and can be moved afterwards by changing
+// node->rect. The ui owns it: vui_overlay_remove() unlinks it right away
+// and frees it before the next render/dispatch, so a node may remove its
+// own overlay from inside its event handler.
+//
+// A left press raises the overlay under the pointer. Focus moves into a
+// new overlay and goes back to where it was when it is removed.
+//   VUI_OVERLAY_MODAL    only this overlay (and ones above it) get input
+//   VUI_OVERLAY_DISMISS  Escape, or a click outside it, removes it
+
+#define VUI_OVERLAY_MODAL   1
+#define VUI_OVERLAY_DISMISS 2
+
+// Returns 0, or -1 if there are too many overlays (8); the node stays yours then.
+int vui_overlay_add(VuiCtx *ui, VuiNode *node, VuiRect rect, int flags);
+void vui_overlay_remove(VuiCtx *ui, VuiNode *node);
+void vui_overlay_raise(VuiCtx *ui, VuiNode *node);
+
 void vui_render(VuiCtx *ui, VuiNode *root);
 int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event);
 void vui_set_focus(VuiCtx *ui, VuiNode *node);
 VuiNode *vui_focus(VuiCtx *ui);
+
+// The whole loop: render, wait for an event, offer it to `handler` first
+// (NULL = none; return 1 to consume it), else vui_dispatch() it. Returns
+// after vui_quit(). Write the loop yourself when you need more control.
+typedef int (*VuiAppHandler)(VuiCtx *ui, const VuiEvent *event, void *userdata);
+
+void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata);
+void vui_quit(VuiCtx *ui);
 
 // -- Controls --
 //
@@ -452,6 +511,64 @@ typedef struct {
 } VuiChecklist;
 
 VuiChecklist *checklist_create(const char **items, unsigned int count, int radio);
+
+// A vertical list of `count` rows whose text comes from `item()` when drawn,
+// so the data can be huge, filtered, or generated -- nothing is copied.
+// Up/Down/PageUp/PageDown/Home/End move the cursor, the wheel scrolls,
+// Enter or a click calls on_select. After changing what item() returns,
+// call list_set_count().
+typedef struct VuiList VuiList;
+
+struct VuiList {
+    VuiNode node;
+    unsigned int count;
+    unsigned int cursor;
+    unsigned int top;       // first visible row
+    unsigned int hover_row; // row under the pointer, when node.hovered
+    int follow;             // scroll to the cursor on next draw
+    const char *(*item)(VuiList *list, unsigned int index); // valid until the next call
+    void (*on_select)(VuiList *list, unsigned int index);
+    void (*on_cursor)(VuiList *list, unsigned int index);   // the cursor moved (keys, click)
+};
+
+VuiList *list_create(unsigned int count, const char *(*item)(VuiList *list, unsigned int index));
+void list_set_count(VuiList *list, unsigned int count); // clamps cursor and scroll
+void list_set_cursor(VuiList *list, unsigned int index);
+
+// Content scrolls inside it: put children in it and give it a size (it grows
+// by default). The wheel, arrows, PageUp/Down, Home/End and the scrollbar
+// (right edge, clickable and draggable) scroll it; focusing a child scrolls
+// it into view. Children keep their natural size and don't shrink.
+VuiNode *scroll_create(void);
+
+// Movable, resizable frame with a title bar and a close box, for use as an
+// overlay (see vui_overlay_add()): drag the title bar to move it, the
+// bottom-right corner to resize it, [x] to close it (on_close, or by
+// default it removes itself). Children go inside, like a border.
+typedef struct {
+    VuiNode node;
+    const char *title;
+    void (*on_close)(VuiNode *window);
+    int drag, grab_x, grab_y; // internal
+} VuiWindow;
+
+VuiWindow *window_create(const char *title);
+
+// A one-line selector: Enter, Space, Down or a click opens a popup list of
+// the items; picking one sets `selected` and calls on_change.
+typedef struct {
+    VuiNode node;
+    const char **items;
+    unsigned int count;
+    unsigned int selected;
+    void (*on_change)(VuiNode *dropdown, unsigned int index);
+} VuiDropdown;
+
+VuiDropdown *dropdown_create(const char **items, unsigned int count, void (*on_change)(VuiNode *dropdown, unsigned int index));
+
+// A one-line row in the theme's bar style, e.g. a status or menu bar.
+// Put labels in it (set their style to vui_theme()->bar so they match).
+VuiDiv *bar_create(void);
 
 // Single-line text field with a fixed capacity (in characters). Handles
 // typing, paste, Backspace/Delete, Left/Right/Home/End, Ctrl-A/E (line

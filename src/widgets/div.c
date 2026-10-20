@@ -17,3 +17,18 @@ VuiDiv *div_create(VuiDirection direction)
 
     return div;
 }
+
+VuiDiv *bar_create(void)
+{
+    VuiDiv *bar = div_create(VUI_DIR_ROW);
+
+    if (bar != NULL) {
+        bar->style = vui_theme()->bar;
+        bar->node.basis = 1;
+        bar->node.shrink = 0;
+        bar->node.gap = 1;
+        node_pad(&bar->node, 0, 1, 0, 1);
+    }
+
+    return bar;
+}
