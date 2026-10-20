@@ -19,6 +19,8 @@ struct VuiCtx {
     VuiNode *removed[VUI_MAX_OVERLAYS]; // unlinked, freed on the next render/dispatch
     unsigned int removed_count;
     int quit;
+    int dirty;      // vui_next_event: something may have changed since the last frame
+    uint64_t last_frame;
     int frame_wait; // vui_run: -1, or the most vui_poll_event may wait (a frame is due)
     VuiNode *root; // last root given to vui_render / vui_dispatch
     VuiWatch watches[VUI_MAX_WATCH];

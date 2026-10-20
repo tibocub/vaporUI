@@ -71,11 +71,7 @@ int main(void)
     for (;;) {
         VuiEvent event;
 
-        vui_render(ui, root);
-
-        do {
-            event = vui_poll_event(ui);
-        } while (event.type == VUI_EVENT_NONE);
+        event = vui_next_event(ui, root);
 
         if (event.type == VUI_EVENT_CLOSE) {
             break;

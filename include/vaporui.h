@@ -410,6 +410,11 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event);
 void vui_set_focus(VuiCtx *ui, VuiNode *node);
 VuiNode *vui_focus(VuiCtx *ui);
 
+// For your own loop: draws a frame when something may have changed (not while more input is
+// waiting, and at most every few ms), then waits for and returns the next event (never NONE; may be
+// VUI_EVENT_CLOSE). `for (;;) { e = vui_next_event(ui, root); ...; vui_dispatch(ui, root, &e); }`
+VuiEvent vui_next_event(VuiCtx *ui, VuiNode *root);
+
 // The whole loop: render (skipped while more input is already waiting), wait for an
 // event, vui_dispatch() it, and offer it to `handler` only if no widget used it
 // (NULL = none). Widgets get first refusal, so a text area keeps Ctrl-C for "copy" and

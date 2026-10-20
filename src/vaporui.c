@@ -49,6 +49,7 @@ VuiCtx *vui_init(void)
     }
 
     ui->frame_wait = -1;
+    ui->dirty = 1;
     vui_platform_clear();
     the_ui = ui;
 

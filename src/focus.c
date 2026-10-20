@@ -466,43 +466,47 @@ void vui_quit(VuiCtx *ui)
 #endif
 #endif
 
-void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata)
+VuiEvent vui_next_event(VuiCtx *ui, VuiNode *root)
 {
-    int dirty = 1;
-    uint64_t last_frame = 0;
-
-    ui->quit = 0;
-    ui->frame_wait = -1;
-
-    while (!ui->quit) {
-        VuiEvent event;
+    for (;;) {
         uint64_t now = vui_platform_now_ms();
+        VuiEvent event;
 
         ui->frame_wait = -1;
 
-        if (dirty) {
+        if (ui->dirty) {
             // Draw now unless more input is already waiting or a frame was drawn a moment ago: then
             // wait out the rest of the frame time for the burst to go on (the wait ends early on input)
-            if (now - last_frame >= VUI_MIN_FRAME_MS && !vui_platform_input_pending()) {
+            if (now - ui->last_frame >= VUI_MIN_FRAME_MS && !vui_platform_input_pending()) {
                 vui_render(ui, root);
-                dirty = 0;
-                last_frame = vui_platform_now_ms();
-            } else if (now - last_frame < VUI_MIN_FRAME_MS) {
-                ui->frame_wait = (int)(VUI_MIN_FRAME_MS - (now - last_frame));
+                ui->dirty = 0;
+                ui->last_frame = vui_platform_now_ms();
+            } else if (now - ui->last_frame < VUI_MIN_FRAME_MS) {
+                ui->frame_wait = (int)(VUI_MIN_FRAME_MS - (now - ui->last_frame));
             }
         }
 
         event = vui_poll_event(ui);
+        ui->frame_wait = -1;
+
+        if (event.type != VUI_EVENT_NONE) {
+            ui->dirty = 1;
+            return event;
+        }
+    }
+}
+
+void vui_run(VuiCtx *ui, VuiNode *root, VuiAppHandler handler, void *userdata)
+{
+    ui->quit = 0;
+    ui->dirty = 1;
+
+    while (!ui->quit) {
+        VuiEvent event = vui_next_event(ui, root);
 
         if (event.type == VUI_EVENT_CLOSE) {
             break;
         }
-
-        if (event.type == VUI_EVENT_NONE) {
-            continue;
-        }
-
-        dirty = 1;
 
         if (!vui_dispatch(ui, root, &event) && handler != NULL) {
             handler(ui, &event, userdata);
