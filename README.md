@@ -17,6 +17,7 @@ is stable).
 - [input.md](docs/input.md): events, what terminals can send, AZERTY/non-QWERTY notes, mouse
 - [widgets.md](docs/widgets.md): widget reference and conventions for adding one
 - [small-targets.md](docs/small-targets.md): RAM / flash / speed on the RP2040 and how it stays small
+- [wasm.md](docs/wasm.md): building and running the examples in a browser
 - [limitations.md](docs/limitations.md): everything that doesn't work yet, in one place
 
 ## Building

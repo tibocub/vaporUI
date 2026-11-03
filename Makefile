@@ -9,13 +9,23 @@ endif
 TARGET ?= POSIX
 POSIX := src/platform/posix.c
 WIN32 := src/platform/win32.c
+WASM := src/platform/wasm.c
+# make TARGET=WASM                                   -> browser build (needs emsdk, see docs/wasm.md): build/wasm/*.js + .wasm
+ifeq ($(TARGET),WASM)
+CC := emcc
+EXE := .js
+BUILD := build/wasm
+SKIP := examples/event-loop.c
+CFLAGS += -O2 -sASYNCIFY -sMODULARIZE -sEXPORT_NAME=createVui -sEXPORTED_RUNTIME_METHODS=FS -sFORCE_FILESYSTEM -sEXIT_RUNTIME=1
+endif
+BUILD ?= build
 ifeq ($(TARGET),WIN32)
 EXE := .exe
 SKIP := examples/event-loop.c
 endif
 
 SRCS := $(wildcard src/*.c src/widgets/*.c)
-EXAMPLES := $(patsubst examples/%.c,build/%$(EXE),$(filter-out $(SKIP),$(wildcard examples/*.c)))
+EXAMPLES := $(patsubst examples/%.c,$(BUILD)/%$(EXE),$(filter-out $(SKIP),$(wildcard examples/*.c)))
 
 .PHONY: all test clean
 
@@ -23,11 +33,11 @@ EXAMPLES := $(patsubst examples/%.c,build/%$(EXE),$(filter-out $(SKIP),$(wildcar
 # the header comment of each one for what to verify)
 all: $(EXAMPLES)
 
-build/%$(EXE): examples/%.c $(SRCS) $($(TARGET)) | build
+$(BUILD)/%$(EXE): examples/%.c $(SRCS) $($(TARGET)) | $(BUILD)
 	$(CC) $(CFLAGS) $< $(SRCS) $($(TARGET)) -o $@
 
-build:
-	mkdir -p build
+$(BUILD):
+	mkdir -p $(BUILD)
 
 # automated checks: input decoder
 # Windows backend check (needs wine or a Windows console): make wintest && wine build/win-watch.exe
