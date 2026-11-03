@@ -2,8 +2,10 @@
 <meta charset="utf-8">
 <title>vaporUI in the browser</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #1a1b26; }
-  #terminal { height: 100vh; }
+  /* fill the viewport exactly: wterm's own padding/shadow/rounding and scrollbar would otherwise overflow it */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1b26; }
+  #terminal { box-sizing: border-box; width: 100vw; height: 100dvh; padding: 0; border-radius: 0; box-shadow: none; scrollbar-width: none; }
+  #terminal::-webkit-scrollbar { display: none; }
 </style>
 <link rel="stylesheet" href="dist/main.css">
 <div id="terminal"></div>
