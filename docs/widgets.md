@@ -41,3 +41,11 @@ Callbacks receive the widget's `VuiNode *`; use `node->userdata` for your own st
 - `on_event` returns 1 only for events it consumed, so the rest bubbles to parents and to your global shortcuts.
 - Content widgets default to `basis = VUI_AUTO` and set `node.measure`.
 - Add or extend an example, and a case in `tests/widgets.c` for non-trivial logic.
+
+## Terminal (optional, POSIX only)
+`terminal_create(argv)` runs a program (NULL = `$SHELL`) on a pty and draws its screen, using the vendored
+libvterm (`third_party/libvterm`). It lives outside the default sources: `src/ext/terminal.c` plus the
+libvterm objects (see the Makefile, which links them into the `windows` example and defines `VUI_TERMINAL`).
+Every key goes to the program (Ctrl-C and Tab included); F6 / Shift-F6 move focus out. The pty follows the
+node's size; `on_exit` fires when the program ends. Not done: scrollback, mouse forwarding, combining marks.
+Not for wasm / Windows / NuttX (no `forkpty`).

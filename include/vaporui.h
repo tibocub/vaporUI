@@ -666,4 +666,23 @@ size_t textarea_get_selection(const VuiTextarea *ta, char *out, size_t size); //
 void textarea_undo(VuiTextarea *ta);
 void textarea_redo(VuiTextarea *ta);
 
+// A terminal emulator: runs a program on a pty and shows its screen (libvterm). Needs
+// src/ext/terminal.c and third_party/libvterm (POSIX only, see the Makefile's TERMINAL=1).
+// argv: the program and its arguments, NULL-terminated (NULL = $SHELL). Every key goes to
+// the program, Ctrl-C included; Tab too, so F6 / Shift-F6 move focus out. The size follows
+// the node. The vterm is created before the program starts, but the pty is sized on first
+// draw. When the program exits, on_exit is called (the node stays, showing its last screen).
+// No scrollback, and mouse input isn't forwarded.
+typedef struct {
+    VuiNode node;
+    void (*on_exit)(VuiNode *terminal, int status); // status as from waitpid()
+    int fd, pid;
+    unsigned int rows, cols;
+    int cursor_visible;
+    struct VTerm *vt;
+    struct VTermScreen *screen;
+} VuiTerminal;
+
+VuiTerminal *terminal_create(const char *const argv[]);
+
 #endif

@@ -16,6 +16,9 @@
 //     menu Left/Right jump to the neighbour, Enter or a click picks, Escape closes it
 //   - right-click on the desktop opens a context menu with the themes (kept on screen near edges)
 //   - the bottom bar names the theme; Ctrl-C copies the selection in a text area, and quits when nothing is selected
+//   - (POSIX build) "Terminal" opens a window running $SHELL: type commands, try vim / htop (alternate screen,
+//     colors); resizing the window resizes the pty (try `stty size`); Ctrl-C goes to the shell, not the app; F6
+//     leaves it; `exit` leaves the last screen shown; closing the window ends the shell
 //   - F6 / Shift-F6 move focus between windows even while a text area has focus (Tab inserts a tab there)
 
 #include <stdio.h>
@@ -91,6 +94,25 @@ static void new_window(VuiNode *button)
     opened++;
 }
 
+#ifdef VUI_TERMINAL
+static void terminal_window(VuiNode *button)
+{
+    VuiWindow *w = window_create("Terminal");
+    VuiTerminal *t = terminal_create(NULL);
+
+    (void)button;
+
+    if (t == NULL) {
+        node_destroy(&w->node);
+        return;
+    }
+
+    node_add(&w->node, &t->node);
+    vui_overlay_add(vui_ctx(), &w->node, (VuiRect){ 8, 4, 62, 16 }, 0);
+    vui_set_focus(vui_ctx(), &t->node);
+}
+#endif
+
 static void scroll_window(VuiNode *button)
 {
     VuiWindow *w = window_create("Scroll");
@@ -164,9 +186,15 @@ static VuiButton *add_button(VuiNode *parent, const char *label, void (*on_click
     return b;
 }
 
+#ifdef VUI_TERMINAL
+static const char *file_items[] = { "New window", "Scroll window", "Quit", "Terminal" };
+#define FILE_COUNT 4
+#else
 static const char *file_items[] = { "New window", "Scroll window", "Quit" };
+#define FILE_COUNT 3
+#endif
 static const char *view_items[] = { "classic", "dos", "truecolor" };
-static const VuiMenu menus[] = { { "File", file_items, 3 }, { "View", view_items, 3 } };
+static const VuiMenu menus[] = { { "File", file_items, FILE_COUNT }, { "View", view_items, 3 } };
 
 static void menu_pick(VuiMenubar *bar, unsigned int menu, unsigned int item)
 {
@@ -175,6 +203,9 @@ static void menu_pick(VuiMenubar *bar, unsigned int menu, unsigned int item)
     if (menu == 1) set_theme(NULL, item);
     else if (item == 0) new_window(NULL);
     else if (item == 1) scroll_window(NULL);
+#ifdef VUI_TERMINAL
+    else if (item == 3) terminal_window(NULL);
+#endif
     else quit_dialog(NULL);
 }
 
@@ -255,6 +286,9 @@ int main(void)
     add_button(desktop, "Scroll", scroll_window);
     theme = dropdown_create(themes, 3, set_theme);
     node_add(desktop, &theme->node);
+#ifdef VUI_TERMINAL
+    add_button(desktop, "Terminal", terminal_window);
+#endif
     add_button(desktop, "Quit", quit_dialog);
 
     bottom = bar_create();

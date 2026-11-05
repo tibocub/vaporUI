@@ -27,6 +27,17 @@ endif
 SRCS := $(wildcard src/*.c src/widgets/*.c)
 EXAMPLES := $(patsubst examples/%.c,$(BUILD)/%$(EXE),$(filter-out $(SKIP),$(wildcard examples/*.c)))
 
+# terminal widget (POSIX only): libvterm is built once into objects and linked into the examples that use it
+VTERM_SRCS := $(wildcard third_party/libvterm/src/*.c)
+VTERM_OBJS := $(patsubst third_party/libvterm/src/%.c,$(BUILD)/vterm/%.o,$(VTERM_SRCS))
+TERM_EXAMPLES :=
+ifeq ($(TARGET),POSIX)
+TERM_SRCS := src/ext/terminal.c $(VTERM_OBJS)
+TERM_EXAMPLES := $(BUILD)/windows
+$(TERM_EXAMPLES): CFLAGS += -DVUI_TERMINAL
+$(TERM_EXAMPLES): $(TERM_SRCS)
+endif
+
 .PHONY: all test clean
 
 # every example builds; they double as manual regression checks (see
@@ -34,7 +45,13 @@ EXAMPLES := $(patsubst examples/%.c,$(BUILD)/%$(EXE),$(filter-out $(SKIP),$(wild
 all: $(EXAMPLES)
 
 $(BUILD)/%$(EXE): examples/%.c $(SRCS) $($(TARGET)) | $(BUILD)
-	$(CC) $(CFLAGS) $< $(SRCS) $($(TARGET)) -o $@
+	$(CC) $(CFLAGS) $< $(SRCS) $($(TARGET)) $(if $(filter $@,$(TERM_EXAMPLES)),$(TERM_SRCS)) -o $@
+
+$(BUILD)/vterm/%.o: third_party/libvterm/src/%.c | $(BUILD)/vterm
+	$(CC) -O1 -w -Ithird_party/libvterm/include -c $< -o $@
+
+$(BUILD)/vterm:
+	mkdir -p $@
 
 $(BUILD):
 	mkdir -p $(BUILD)
