@@ -1,1 +1,1 @@
-libvterm 0.3.3 (https://www.leonerd.org.uk/code/libvterm/), MIT, unmodified.
+libvterm, the Neovim-lineage fork vendored in vaporOS (vterm/libvterm), MIT. Keep identical to that copy: the vaporOS vaporui app builds vaporOS's copy instead of this one, so the two must not drift.

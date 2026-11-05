@@ -48,4 +48,6 @@ libvterm (`third_party/libvterm`). It lives outside the default sources: `src/ex
 libvterm objects (see the Makefile, which links them into the `windows` example and defines `VUI_TERMINAL`).
 Every key goes to the program (Ctrl-C and Tab included); F6 / Shift-F6 move focus out. The pty follows the
 node's size; `on_exit` fires when the program ends. Not done: scrollback, mouse forwarding, combining marks.
-Not for wasm / Windows / NuttX (no `forkpty`).
+On NuttX (no MMU, so no `fork`) it opens `/dev/ptmx` and `posix_spawn`s the program: needs `CONFIG_PSEUDOTERM`,
+enabled by vaporOS's `vaporui-terminal` feature (sim-nsh). libvterm keeps ~40 B per cell (twice with the alternate
+screen), so it is not meant for the RP2040. Not for wasm / Windows.

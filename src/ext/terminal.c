@@ -1,7 +1,10 @@
 // Terminal widget: a child process on a pty, its output interpreted by libvterm (third_party/libvterm).
-// POSIX only (forkpty); not part of the default build, see "make TARGET=POSIX TERMINAL=1" / the Makefile.
+// POSIX (forkpty) and NuttX (/dev/ptmx + posix_spawn: no MMU, no fork); not part of the default
+// build, see the Makefile and vaporOS/vaporui.
+#ifndef __NuttX__
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE
+#endif
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -9,7 +12,10 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#ifdef __APPLE__
+#if defined(__NuttX__)
+#include <fcntl.h>
+#include <spawn.h>
+#elif defined(__APPLE__)
 #include <util.h>
 #else
 #include <pty.h>
@@ -187,7 +193,13 @@ static void term_destroy(VuiNode *node)
         vui_unwatch_fd(vui_ctx(), t->fd);
         close(t->fd);
         kill(t->pid, SIGHUP);
+#ifdef __NuttX__
+        // closing the master hangs the pty up: the shell sees EOF and exits. shortcut: not waited for
+        // (a stuck child must not freeze the UI), so its exit status stays allocated until the app exits
+        waitpid(t->pid, NULL, WNOHANG);
+#else
         waitpid(t->pid, NULL, 0); // shortcut: a child ignoring SIGHUP blocks here, when that matters send SIGKILL after a timeout
+#endif
     }
 
     vterm_free(t->vt);
@@ -219,19 +231,47 @@ VuiTerminal *terminal_create(const char *const argv[])
     vterm_screen_enable_altscreen(t->screen, 1);
     vterm_screen_reset(t->screen, 1);
 
+    setenv("TERM", "xterm-256color", 1);
+
+#ifdef __NuttX__
+    {
+        char slave[32];
+        posix_spawn_file_actions_t fa;
+        int ok = 0;
+
+        t->fd = open("/dev/ptmx", O_RDWR | O_NOCTTY);
+
+        if (t->fd >= 0 && unlockpt(t->fd) == 0 && ptsname_r(t->fd, slave, sizeof(slave)) == 0) {
+            ioctl(t->fd, TIOCSWINSZ, (unsigned long)&ws);
+            posix_spawn_file_actions_init(&fa);
+            posix_spawn_file_actions_addopen(&fa, 0, slave, O_RDWR, 0);
+            posix_spawn_file_actions_adddup2(&fa, 0, 1);
+            posix_spawn_file_actions_adddup2(&fa, 0, 2);
+            ok = posix_spawnp(&t->pid, argv[0], &fa, NULL, (char *const *)argv, NULL) == 0;
+            posix_spawn_file_actions_destroy(&fa);
+        }
+
+        if (!ok) {
+            if (t->fd >= 0) close(t->fd);
+            t->fd = -1;
+        }
+
+        t->pid = ok ? t->pid : -1;
+    }
+#else
     t->pid = forkpty(&t->fd, NULL, NULL, &ws);
+
+    if (t->pid == 0) {
+        execvp(argv[0], (char *const *)argv);
+        _exit(127);
+    }
+#endif
 
     if (t->pid < 0) {
         t->fd = -1;
         t->node.destroy = term_destroy; // frees the vterm
         node_destroy(&t->node);
         return NULL;
-    }
-
-    if (t->pid == 0) {
-        setenv("TERM", "xterm-256color", 1);
-        execvp(argv[0], (char *const *)argv);
-        _exit(127);
     }
 
     t->node.destroy = term_destroy;
