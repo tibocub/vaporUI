@@ -26,6 +26,14 @@ is stable).
 - **Windows from Linux:** `make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc`.
 - Nothing else is needed: no NuttX, no external libraries. The Windows `.exe` files need Windows 10 or newer (VT console).
 
+## Browser (WebAssembly)
+Needs [emscripten](https://emscripten.org), `bun`:
+```
+make TARGET=WASM
+cd web && bun i && bun build main.js --outdir dist --target browser && ./serve.sh   # http://localhost:8080/?app=windows
+```
+See [wasm.md](docs/wasm.md).
+
 ## Examples and tests
 `make` builds every `examples/*.c` into `build/` They are both the
 how-to for building UIs with vaporUI and the manual regression suite:
@@ -115,5 +123,6 @@ VaporUI widgets:
 - [x] text input (single line)
 - [x] text area (multi-line: selection, clipboard, wrap, undo/redo, auto-indent, wide chars)
 - [x] label
+- [x] terminal (libvterm)
 - [ ] form
 - [ ] tree

@@ -4,7 +4,7 @@ The examples compile to wasm with [emscripten](https://emscripten.org) and run i
 
     source ~/Code/emsdk/emsdk_env.sh
     make TARGET=WASM              # build/wasm/<example>.js + .wasm
-    cd web && npm i && bun build main.js --outdir dist --target browser
+    cd web && bun i && bun build main.js --outdir dist --target browser
     ./serve.sh                    # http://localhost:8080/?app=windows
 
 ## How it works
