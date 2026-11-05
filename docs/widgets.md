@@ -47,7 +47,7 @@ Callbacks receive the widget's `VuiNode *`; use `node->userdata` for your own st
 libvterm (`third_party/libvterm`). It lives outside the default sources: `src/ext/terminal.c` plus the
 libvterm objects (see the Makefile, which links them into the `windows` example and defines `VUI_TERMINAL`).
 Every key goes to the program (Ctrl-C and Tab included); F6 / Shift-F6 move focus out. The pty follows the
-node's size; `on_exit` fires when the program ends. Not done: scrollback, mouse forwarding, combining marks.
+node's size; `on_exit` fires when the program ends. Resizing re-wraps the shown rows (libvterm reflow) and keeps up to `VUI_TERMINAL_SCROLLBACK` (200) scrolled-off lines, which come back when the window grows (a too-wide line in pieces); lines that were split by a shrink are not re-joined when it grows again. Not done: scrolling back to them, mouse forwarding, combining marks.
 On NuttX (no MMU, so no `fork`) it opens `/dev/ptmx` and `posix_spawn`s the program: needs `CONFIG_PSEUDOTERM`,
 enabled by vaporOS's `vaporui-terminal` feature (sim-nsh). libvterm keeps ~40 B per cell (twice with the alternate
 screen), so it is not meant for the RP2040. Not for wasm / Windows.

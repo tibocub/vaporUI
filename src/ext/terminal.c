@@ -24,6 +24,91 @@
 #include "../../include/vaporui.h"
 #include "../../third_party/libvterm/include/vterm.h"
 
+// Scrollback: lines that scroll off the top (or off a shrinking window) wait here so that making the window
+// taller or wider again brings them back. Each line is stored at the width it had. shortcut: no way to scroll
+// back to them with the wheel, and they don't reflow themselves (only the visible rows do).
+#ifndef VUI_TERMINAL_SCROLLBACK
+#define VUI_TERMINAL_SCROLLBACK 200 // lines kept (~60 B per cell: 200 lines of 80 columns is ~1 MB; lower it on small targets)
+#endif
+
+typedef struct {
+    int cols;
+    VTermScreenCell cells[];
+} Line;
+
+static int sb_push(int cols, const VTermScreenCell *cells, void *user)
+{
+    VuiTerminal *t = user;
+    Line **sb = t->sb, *l = malloc(sizeof(Line) + cols * sizeof(VTermScreenCell));
+
+    if (l == NULL) return 0;
+    l->cols = cols;
+    memcpy(l->cells, cells, cols * sizeof(VTermScreenCell));
+
+    if (t->sb_len == VUI_TERMINAL_SCROLLBACK) {
+        free(sb[0]);
+        memmove(sb, sb + 1, --t->sb_len * sizeof(Line *));
+    }
+
+    if (sb == NULL) {
+        sb = t->sb = calloc(VUI_TERMINAL_SCROLLBACK, sizeof(Line *));
+        if (sb == NULL) { free(l); return 0; }
+    }
+
+    sb[t->sb_len++] = l;
+    return 1;
+}
+
+// Hands back the last row of the newest line. libvterm asks with the width the screen had before a resize and
+// then cuts the row to the new one, so a line wider than the new width (t->cols, set before the resize) comes
+// back in pieces of that width, last piece first: it re-wraps instead of being cut off.
+static int sb_pop(int cols, VTermScreenCell *cells, void *user)
+{
+    VuiTerminal *t = user;
+    Line *l;
+    int used = 0, start = 0;
+
+    if (t->sb_len == 0) return 0;
+
+    l = ((Line **)t->sb)[t->sb_len - 1];
+
+    for (int i = 0; i < l->cols; i++) {
+        if (l->cells[i].chars[0] != 0) used = i + (l->cells[i].width > 1 ? l->cells[i].width : 1);
+    }
+
+    int w = t->cols > 0 && (int)t->cols < cols ? (int)t->cols : cols;
+
+    if (used > w) start = (used - 1) / w * w;
+
+    for (int i = 0; i < cols; i++) {
+        if (start + i < l->cols) {
+            cells[i] = l->cells[start + i];
+        } else {
+            memset(&cells[i], 0, sizeof(cells[i]));
+            cells[i].width = 1;
+            cells[i].fg = l->cells[l->cols - 1].fg;
+            cells[i].bg = l->cells[l->cols - 1].bg;
+        }
+    }
+
+    if (start > 0) {
+        l->cols = start; // the rest of the line stays for the next pop
+    } else {
+        free(l);
+        t->sb_len--;
+    }
+
+    return 1;
+}
+
+static int sb_clear(void *user)
+{
+    VuiTerminal *t = user;
+
+    while (t->sb_len > 0) free(((Line **)t->sb)[--t->sb_len]);
+    return 1;
+}
+
 static VuiColor color(VTermScreen *screen, VTermColor c)
 {
     if (VTERM_COLOR_IS_DEFAULT_FG(&c) || VTERM_COLOR_IS_DEFAULT_BG(&c)) return VUI_COLOR_DEFAULT;
@@ -155,7 +240,7 @@ static int set_prop(VTermProp prop, VTermValue *val, void *user)
     return 1;
 }
 
-static const VTermScreenCallbacks screen_cb = { .settermprop = set_prop };
+static const VTermScreenCallbacks screen_cb = { .settermprop = set_prop, .sb_pushline = sb_push, .sb_popline = sb_pop, .sb_clear = sb_clear };
 
 static void child_gone(VuiTerminal *t)
 {
@@ -203,6 +288,8 @@ static void term_destroy(VuiNode *node)
     }
 
     vterm_free(t->vt);
+    sb_clear(t);
+    free(t->sb);
 }
 
 VuiTerminal *terminal_create(const char *const argv[])
@@ -229,6 +316,7 @@ VuiTerminal *terminal_create(const char *const argv[])
     t->screen = vterm_obtain_screen(t->vt);
     vterm_screen_set_callbacks(t->screen, &screen_cb, t);
     vterm_screen_enable_altscreen(t->screen, 1);
+    vterm_screen_enable_reflow(t->screen, 1); // a resize re-wraps the rows that are shown
     vterm_screen_reset(t->screen, 1);
 
     setenv("TERM", "xterm-256color", 1);

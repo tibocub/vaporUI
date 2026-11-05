@@ -672,7 +672,8 @@ void textarea_redo(VuiTextarea *ta);
 // the program, Ctrl-C included; Tab too, so F6 / Shift-F6 move focus out. The size follows
 // the node. The vterm is created before the program starts, but the pty is sized on first
 // draw. When the program exits, on_exit is called (the node stays, showing its last screen).
-// No scrollback, and mouse input isn't forwarded.
+// Resizing re-wraps the shown lines and keeps up to VUI_TERMINAL_SCROLLBACK scrolled-off lines to bring back
+// when it grows; there is no way to scroll back to them yet, and mouse input isn't forwarded.
 typedef struct {
     VuiNode node;
     void (*on_exit)(VuiNode *terminal, int status); // status as from waitpid()
@@ -681,6 +682,8 @@ typedef struct {
     int cursor_visible;
     struct VTerm *vt;
     struct VTermScreen *screen;
+    void *sb;  // scrollback lines (internal)
+    unsigned int sb_len;
 } VuiTerminal;
 
 VuiTerminal *terminal_create(const char *const argv[]);
