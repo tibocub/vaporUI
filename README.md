@@ -1,9 +1,13 @@
 # vaporUI
-A simple and cross-platform ncurses alternative made for [vaporOS](https://github.com/tibocub/vaporOS).
+A simple TUI library. An ncurses alternative originaly made for [vaporOS](https://github.com/tibocub/vaporOS),
+but that aims to be as small, portable and cross-platform as possible. It runs as well on Windows/Linux than it does on an RP2040.
+
+Tested and supported on **Linux**, **Windows** and **WASM**
+Not tested yet on **macOS** and **BSD**, but support planned.
 
 Aims to be easier than ncurses and expose a
 C ABI to be used from other languages such
-as Lua.
+as Lua, Python, NodeJS...
 
 ## Portability
 This library is optimized for portability and
@@ -27,7 +31,7 @@ is stable).
 - Nothing else is needed: no NuttX, no external libraries. The Windows `.exe` files need Windows 10 or newer (VT console).
 
 ## Browser (WebAssembly)
-Needs [emscripten](https://emscripten.org), `bun`:
+Needs [emscripten](https://emscripten.org) and `bun`:
 ```
 make TARGET=WASM
 cd web && bun i && bun build main.js --outdir dist --target browser && ./serve.sh   # http://localhost:8080/?app=windows
