@@ -131,10 +131,10 @@ Consequences and safety:
 
 The console has no mouse protocol; the `gpm` daemon owns the mouse and draws its own pointer and text selection. While an
 app has the mouse on (`vui_set_mouse`), the POSIX backend connects to `/dev/gpmctl` (`src/gpm.c`, pure structs; no
-libgpm needed), takes the events and sets the console's selection pointer under the cursor. Closing the socket (mouse off,
+libgpm needed), takes the events; the daemon keeps drawing its pointer for plain moves (a client can only draw one as root), but not while a button is held. Closing the socket (mouse off,
 exit) gives the mouse back to gpm, so plain text selection works again outside the app. Without the daemon running
 (`systemctl start gpm`) there is no mouse on a console. Shortcuts: the wheel's sign convention was read from gpm's
-headers, not tested on hardware; the pointer disappears if the text mode changes.
+headers, not tested on hardware.
 
 ### Terminal shortcuts
 

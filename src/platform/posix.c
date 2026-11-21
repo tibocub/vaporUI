@@ -370,8 +370,8 @@ static const char *detect_layout(void)
 // Mouse on the Linux console: the gpm daemon, if it runs, owns the mouse (it draws a pointer and selects text on the
 // console itself). While an app wants the mouse we connect to /dev/gpmctl and take the events (src/gpm.c), which
 // switches the daemon's own selection off for us; closing the socket gives it back. No daemon, no mouse.
-// shortcut: the pointer is the console's selection pointer (TIOCL_SETSEL mode 3) set after each event; a program
-// that keeps the mouse for long on a console with a different text mode may see it vanish.
+// The pointer stays the daemon's (it keeps handling plain moves): drawing one from a client needs root (TIOCL_SETSEL).
+// shortcut: while a button is down (a drag) the daemon does not move its pointer.
 static int gpm_fd = -1, gpm_level;
 static unsigned char gpm_buf[VUI_GPM_EVENT_SIZE];
 static unsigned int gpm_have;
@@ -379,9 +379,6 @@ static unsigned int gpm_have;
 static void gpm_close(void)
 {
     if (gpm_fd >= 0) {
-        char clear = TIOCL_SELCLEAR;
-
-        ioctl(tty_fd, TIOCLINUX, &clear); // takes the pointer away
         close(gpm_fd);
         gpm_fd = -1;
     }
@@ -417,17 +414,6 @@ static void gpm_open(void)
     fcntl(gpm_fd, F_SETFD, FD_CLOEXEC);
 }
 
-static void gpm_pointer(unsigned int x, unsigned int y)
-{
-    struct { char subcode; struct tiocl_selection sel; } __attribute__((packed)) arg;
-
-    arg.subcode = TIOCL_SETSEL;
-    arg.sel.xs = arg.sel.xe = (unsigned short)(x + 1);
-    arg.sel.ys = arg.sel.ye = (unsigned short)(y + 1);
-    arg.sel.sel_mode = TIOCL_SELPOINTER;
-    ioctl(tty_fd, TIOCLINUX, &arg);
-}
-
 // One event from the daemon, or NONE
 static VuiEvent gpm_read(void)
 {
@@ -443,8 +429,7 @@ static VuiEvent gpm_read(void)
     if (gpm_have < sizeof(gpm_buf)) return event;
     gpm_have = 0;
 
-    if (vui_gpm_event(gpm_buf, gpm_level, &event)) gpm_pointer(event.mouse.x, event.mouse.y);
-    else event.type = VUI_EVENT_NONE;
+    if (!vui_gpm_event(gpm_buf, gpm_level, &event)) event.type = VUI_EVENT_NONE;
     return event;
 }
 #endif

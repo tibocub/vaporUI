@@ -11,7 +11,7 @@ static int get16(const unsigned char *p) { return (short)(p[0] | (p[1] << 8)); }
 // daemon and its client are on the same machine
 void vui_gpm_hello(unsigned char out[VUI_GPM_HELLO_SIZE], int pid, int vc)
 {
-    unsigned short masks[4] = { MOVE | DRAG | DOWN | UP, 0, 0, 0xFFFF };
+    unsigned short masks[4] = { MOVE | DRAG | DOWN | UP, MOVE, 0, 0xFFFF };
     int v[2] = { pid, vc };
 
     memcpy(out, masks, sizeof(masks));
