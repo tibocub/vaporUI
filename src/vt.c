@@ -14,6 +14,7 @@ void vui_vt_reset(VuiVtDecoder *decoder)
     decoder->mouse = 0;
     decoder->index = 0;
     decoder->sub = 0;
+    decoder->alt[0] = decoder->alt[1] = 0;
 }
 
 static VuiVtResult done(VuiEvent *event, VuiKey key, int mod)
@@ -22,6 +23,7 @@ static VuiVtResult done(VuiEvent *event, VuiKey key, int mod)
     event->key.key = key;
     event->key.modifiers = mod > 1 ? (VuiModifiers)((mod - 1) & 15) : VUI_MOD_NONE;
     event->key.character = 0;
+    event->key.base = 0;
     return VUI_VT_COMPLETE;
 }
 
@@ -90,6 +92,8 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
         // shortcut: only the first three params are kept, rest are dropped
         if (!decoder->sub && decoder->index < 3) {
             decoder->param[decoder->index] = decoder->param[decoder->index] * 10 + (byte - '0');
+        } else if (decoder->index == 0 && decoder->sub <= 2) {
+            decoder->alt[decoder->sub - 1] = decoder->alt[decoder->sub - 1] * 10 + (byte - '0');
         }
         return VUI_VT_NEED_MORE;
     }
@@ -100,9 +104,10 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
         return VUI_VT_NEED_MORE;
     }
 
-    // ':' starts kitty sub-fields (alternate keys, event type): ignored
+    // ':' starts kitty sub-fields: code:shifted:base-layout in the first param (kept), the event type after the
+    // modifiers (ignored)
     if (byte == ':') {
-        decoder->sub = 1;
+        decoder->sub++;
         return VUI_VT_NEED_MORE;
     }
 
@@ -145,7 +150,12 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
         default:        return VUI_VT_INVALID;
         }
 
-    case 'u': return other_key(event, decoder->param[0], mod);
+    case 'u': {
+        VuiVtResult r = other_key(event, decoder->param[0], mod);
+
+        if (r == VUI_VT_COMPLETE && event->key.key == VUI_KEY_CHAR) event->key.base = (VuiCodepoint)decoder->alt[1];
+        return r;
+    }
 
     default:
         return VUI_VT_INVALID;

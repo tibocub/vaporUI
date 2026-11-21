@@ -19,7 +19,8 @@ typedef struct {
     int param[3];
     int index; // which param digits go into
     int mouse; // CSI '<' seen: SGR mouse report
-    int sub;   // inside a ':' sub-field, digits ignored
+    int sub;   // which ':' sub-field of the first param we are in (0: the main value)
+    int alt[2]; // kitty alternate keys of the first param: shifted key, base-layout key (0: absent)
 } VuiVtDecoder;
 
 // Caller is expected to have already consumed the leading ESC (0x1B)

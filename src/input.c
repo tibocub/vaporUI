@@ -1,3 +1,6 @@
+#include <stdlib.h>
+#include <string.h>
+
 #include "input.h"
 
 void vui_input_reset(VuiInputDecoder *decoder)
@@ -145,15 +148,90 @@ static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
     return event;
 }
 
+// -- Normalising letters and finding the physical key --
+
+// Simple lowercase of the alphabets that have it: Latin (with accents), Greek, Cyrillic. 0 if `c` isn't uppercase.
+static uint32_t lower_of(uint32_t c)
+{
+    if (c >= 'A' && c <= 'Z') return c + 32;
+    if (c >= 0xC0 && c <= 0xDE && c != 0xD7) return c + 32;
+    if (c == 0x178) return 0xFF;
+    if ((c >= 0x100 && c <= 0x137) || (c >= 0x14A && c <= 0x177)) return (c & 1) ? 0 : c + 1;
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E)) return (c & 1) ? c + 1 : 0;
+    if (c >= 0x391 && c <= 0x3A9 && c != 0x3A2) return c + 32;
+    if (c >= 0x410 && c <= 0x42F) return c + 32;
+    if (c >= 0x400 && c <= 0x40F) return c + 80;
+    return 0;
+}
+
+// What a layout types, as the key it is on a US keyboard: typed character -> base key, and whether Shift is held
+// for that character. Characters not listed are their own base key (letters, and digits on US).
+typedef struct { uint32_t typed, base; uint8_t shift; } LayoutKey;
+
+static const LayoutKey us_keys[] = {
+    { '!', '1', 1 }, { '@', '2', 1 }, { '#', '3', 1 }, { '$', '4', 1 }, { '%', '5', 1 }, { '^', '6', 1 },
+    { '&', '7', 1 }, { '*', '8', 1 }, { '(', '9', 1 }, { ')', '0', 1 }, { '_', '-', 1 }, { '+', '=', 1 },
+    { '{', '[', 1 }, { '}', ']', 1 }, { '|', '\\', 1 }, { ':', ';', 1 }, { '"', '\'', 1 }, { '<', ',', 1 },
+    { '>', '.', 1 }, { '?', '/', 1 }, { '~', '`', 1 },
+    { 0, 0, 0 }
+};
+
+static const LayoutKey fr_keys[] = {
+    { '&', '1', 0 }, { 0xE9, '2', 0 }, { '"', '3', 0 }, { '\'', '4', 0 }, { '(', '5', 0 }, { '-', '6', 0 },
+    { 0xE8, '7', 0 }, { '_', '8', 0 }, { 0xE7, '9', 0 }, { 0xE0, '0', 0 }, { ')', '-', 0 }, { '=', '=', 0 },
+    { '1', '1', 1 }, { '2', '2', 1 }, { '3', '3', 1 }, { '4', '4', 1 }, { '5', '5', 1 }, { '6', '6', 1 },
+    { '7', '7', 1 }, { '8', '8', 1 }, { '9', '9', 1 }, { '0', '0', 1 }, { 0xB0, '-', 1 }, { '+', '=', 1 },
+    { '^', '[', 0 }, { '$', ']', 0 }, { 0xF9, '\'', 0 }, { '*', '\\', 0 },
+    { 0xA8, '[', 1 }, { 0xA3, ']', 1 }, { '%', '\'', 1 }, { 0xB5, '\\', 1 },
+    { 'a', 'q', 0 }, { 'q', 'a', 0 }, { 'z', 'w', 0 }, { 'w', 'z', 0 },
+    { 'm', ';', 0 }, { ',', 'm', 0 }, { ';', ',', 0 }, { ':', '.', 0 }, { '!', '/', 0 },
+    { '?', 'm', 1 }, { '.', ',', 1 }, { '/', '.', 1 }, { 0xA7, '/', 1 },
+    { 0, 0, 0 }
+};
+
+static const LayoutKey *layout = us_keys;
+static int layout_chosen;
+
+int vui_set_layout(const char *name)
+{
+    if (name == NULL || *name == '\0') name = getenv("VUI_LAYOUT");
+
+    if (name == NULL || *name == '\0' || !strcmp(name, "us")) layout = us_keys;
+    else if (!strcmp(name, "fr")) layout = fr_keys;
+    else return -1;
+
+    layout_chosen = 1;
+    return 0;
+}
+
 // A letter key is always reported as the lowercase letter plus VUI_MOD_SHIFT, whatever the terminal sent: a legacy
 // terminal says Alt+Shift+q as ESC 'Q' (no Shift), a kitty / modifyOtherKeys one as 'q' or 'Q' with Shift.
+// Then the base key: from the terminal if it said (kitty alternate keys), else from the layout table.
 VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
 {
     VuiEvent e = feed(decoder, byte);
 
-    if (e.type == VUI_EVENT_KEY && e.key.key == VUI_KEY_CHAR && e.key.character >= 'A' && e.key.character <= 'Z') {
-        e.key.character += 'a' - 'A';
-        e.key.modifiers |= VUI_MOD_SHIFT;
+    if (e.type == VUI_EVENT_KEY && e.key.key == VUI_KEY_CHAR) {
+        VuiKeyEvent *k = &e.key;
+        uint32_t lc = lower_of(k->character);
+
+        if (lc != 0) {
+            k->character = lc;
+            k->modifiers |= VUI_MOD_SHIFT;
+        }
+
+        if (k->base == 0) {
+            if (!layout_chosen) vui_set_layout(NULL);
+
+            k->base = k->character;
+            for (const LayoutKey *l = layout; l->typed != 0; l++) {
+                if (l->typed == k->character) {
+                    k->base = l->base;
+                    if (l->shift) k->modifiers |= VUI_MOD_SHIFT;
+                    break;
+                }
+            }
+        }
     }
 
     return e;

@@ -5,6 +5,7 @@
 //   - Ctrl-, Alt- and Shift- combos      -> "key: Ctrl-Alt-x", arrows, F1-F12...
 //   - Ctrl-$ / Ctrl-1 / Shift-Enter      -> only on kitty-protocol terminals
 //   - click, drag, wheel                 -> "mouse: ..." and a '+' at the pointer
+//   - Alt+& on AZERTY (run with VUI_LAYOUT=fr, or a kitty-protocol terminal): "Alt-& [base 1]", the key's US-layout identity
 //   - paste multi-line text              -> "pasting..." then the last character
 //   - resize the window                  -> resolution line updates
 //   - Ctrl-C                             -> quits and restores the terminal
@@ -63,7 +64,16 @@ static const char *key_name(const VuiKeyEvent *event, char *buf, size_t bufsize)
         event->key == VUI_KEY_CHAR ? "" : base_name(event));
 
     if (event->key == VUI_KEY_CHAR && n > 0 && (size_t)n + 5 < bufsize) {
-        buf[n + vui_utf8_encode(event->character, (uint8_t *)buf + n)] = 0;
+        n += vui_utf8_encode(event->character, (uint8_t *)buf + n);
+        buf[n] = 0;
+
+        // the key on a US keyboard, when it isn't the character itself: [base 1] for the key typing '&' on AZERTY
+        if (event->base != event->character && (size_t)n + 12 < bufsize) {
+            n += snprintf(buf + n, bufsize - n, " [base ");
+            n += vui_utf8_encode(event->base, (uint8_t *)buf + n);
+            buf[n++] = ']';
+            buf[n] = 0;
+        }
     }
 
     return buf;

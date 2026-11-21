@@ -44,7 +44,7 @@ static inline void vtout_start(void)
     // kitty keyboard protocol ('disambiguate') and xterm modifyOtherKeys
     // level 1: let terminals that support either report Ctrl/Alt/Shift on
     // any key. Others ignore them.
-    fputs("\033[?1049h\033[?25l\033[>1u\033[>4;1m\033[?2004h", stdout); // alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), + xterm modifyOtherKeys 1, bracketed paste
+    fputs("\033[?1049h\033[?25l\033[>5u\033[>4;1m\033[?2004h", stdout); // kitty keyboard flags 1+4 (disambiguate, alternate keys); alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), + xterm modifyOtherKeys 1, bracketed paste
     fflush(stdout);
 }
 

@@ -28,8 +28,8 @@ A terminal only reports what it encodes. Three tiers, all handled in `src/vt.c` 
    *Not representable:* Ctrl+digit, Ctrl+most symbols, Ctrl+accented letters, Shift+Enter...
 2. **xterm modifyOtherKeys** (`CSI 27;<mod>;<code> ~`), enabled at level 1 on init: terminals that
    support it report Ctrl+symbol / Ctrl+accented keys.
-3. **kitty keyboard protocol** (`CSI <code>;<mod> u`), enabled at the "disambiguate" level on init:
-   any key with any modifiers.
+3. **kitty keyboard protocol** (`CSI <code>[:<shifted>[:<base>]];<mod> u`), enabled at the "disambiguate" + "alternate keys"
+   levels on init: any key with any modifiers, and which physical key it was.
 
 Both modern modes are requested at init and undone at shutdown; terminals that don't know them ignore
 the request, and then those combos simply never arrive. Test with `examples/input-handling`: if a
@@ -37,11 +37,26 @@ combo doesn't show there, your terminal isn't sending it, not vaporUI failing to
 
 ### Non-QWERTY layouts (AZERTY etc.)
 
-Characters are decoded as Unicode, so typing é, à, ç, ù, €, 日 works everywhere as `TEXT`. The
-shortcut that is the "Ctrl-2" of a QWERTY board is `Ctrl-é` on AZERTY, and it is reported as
-`CHAR` + `CTRL` + `0xE9` (`'é'`), i.e. the character the key produces on your layout, *if the terminal
-supports tier 2 or 3*. Bind it with `ctl_bind(c, VUI_KEY_CHAR, VUI_MOD_CTRL, 0xE9, ...)`.
-On Windows, AltGr is reported by Windows as Ctrl+Alt; not tested yet.
+Characters are decoded as Unicode, so typing é, à, ç, ù, €, 日 works everywhere as `TEXT`. A key combo is a
+`KEY` + `VUI_KEY_CHAR` with two ways to name the key, and you choose per binding:
+
+- `character`: what the key types on the user's layout, lowercase (Shift is the modifier flag, also for accented
+  letters: Alt+Shift+É is `'é'` + ALT|SHIFT). Use it for "the key labelled Q": Alt+q is the key printed Q on every layout.
+- `base`: where the key sits, as the character of the same position on a US keyboard. The key typing `&` on AZERTY
+  has base `'1'`, `é` is `'2'`, and Alt+Shift+that key is base `'1'` with SHIFT whichever way the terminal said it
+  (`ESC 1`, since AZERTY types a 1 with Shift, or `ESC &` + a Shift flag). Use it for "the number row", so tag
+  shortcuts work on every layout.
+
+Where `base` comes from:
+1. **The terminal**, with the kitty keyboard protocol's alternate keys (vaporUI asks for them at init): kitty, foot,
+   WezTerm, Ghostty, Alacritty. Exact, nothing to configure.
+2. **A layout table**, for every other terminal (GNOME Terminal, xterm, the Linux console...), which cannot tell:
+   `vui_set_layout("fr")` or `VUI_LAYOUT=fr` in the environment (`us`, the default, and `fr` for now; a table is a
+   few lines in `src/input.c`, contributions welcome). A terminal that does send alternate keys never needs it.
+3. Windows: not done yet (the console gives scan codes, which would be exact).
+
+`Ctrl+é` and friends have no legacy encoding: they only arrive if the terminal speaks modifyOtherKeys or the kitty
+protocol (tier 2-3 above). When they arrive, `base` works for them like for any key.
 
 ### Terminal shortcuts
 
@@ -58,8 +73,8 @@ terminal we write ourselves can simply not bind them.
   `ESC` then a key sent much later arrives as two events.
 - Legacy `Ctrl-H` is byte 8, which is also what many terminals send for Ctrl+Backspace.
   `Ctrl-I` is Tab, `Ctrl-M` is Enter, `Ctrl-[` is Escape: those are indistinguishable in tier 1.
-- Shift on letters is not reported as a modifier (you get the uppercase `TEXT`); Shift on named keys
-  and, in tiers 2-3, on non-text keys is.
+- Typed text is plain: Shift on a letter gives uppercase `TEXT`. In a *combo* (Ctrl/Alt) a letter is always lowercase
+  + SHIFT, in every tier.
 - Not decoded yet: mouse X10/urxvt encodings (only SGR), focus in/out events, F13+, keypad.
 
 ## Mouse

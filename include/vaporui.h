@@ -62,8 +62,17 @@ typedef enum {
 typedef struct {
     VuiKey key;
     VuiModifiers modifiers;
-    VuiCodepoint character; // valid when key == VUI_KEY_CHAR
+    VuiCodepoint character; // valid when key == VUI_KEY_CHAR: the character the key types on the user's layout (lowercase)
+    // valid when key == VUI_KEY_CHAR: the same key on a US layout, so shortcuts don't depend on the keyboard. The
+    // key typing '&' on AZERTY has base '1' (and Shift held, even though no terminal says so when it sends a '1').
+    // Bind `character` for "the key labelled Q", `base` for "the key in the number row". See vui_set_layout().
+    VuiCodepoint base;
 } VuiKeyEvent;
+
+// The keyboard layout, for terminals that can't tell which physical key was pressed (most can't: kitty, foot,
+// WezTerm, Ghostty and Alacritty can). "us" (the default), "fr". NULL or "" = $VUI_LAYOUT, then "us". Returns -1
+// for a layout vaporUI doesn't know (nothing changes). Call it before reading events.
+int vui_set_layout(const char *name);
 
 typedef enum {
     VUI_MOUSE_NONE, // motion with no button held

@@ -8,7 +8,7 @@ static VuiEvent run(const char *s){VuiInputDecoder d;vui_input_reset(&d);VuiEven
 int main(void){
  VuiEvent e=run("\x1b" "x"); assert(e.key.key==VUI_KEY_CHAR&&e.key.character=='x'&&e.key.modifiers==VUI_MOD_ALT);
  e=run("\x1b[1;5C"); assert(e.key.key==VUI_KEY_RIGHT&&e.key.modifiers==VUI_MOD_CTRL);
- e=run("\x1b[36;5u"); assert(e.key.character=='$'&&e.key.modifiers==VUI_MOD_CTRL);
+ e=run("\x1b[36;5u"); assert(e.key.character=='$'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)&&e.key.base=='4'); // US: $ is Shift+4
  e=run("\x1bQ"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b[81;4u"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b[113;4u"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
@@ -42,5 +42,24 @@ int main(void){
  e=run("\x1b[5;2~"); assert(e.key.key==VUI_KEY_PAGE_UP&&e.key.modifiers==VUI_MOD_SHIFT);
  e=run("\x1b[6;2~"); assert(e.key.key==VUI_KEY_PAGE_DOWN&&e.key.modifiers==VUI_MOD_SHIFT);
  e=run("\x1b[1;6F"); assert(e.key.modifiers==(VUI_MOD_SHIFT|VUI_MOD_CTRL));
+ // Shift on any letter, accents included, is lowercase + Shift
+ e=run("\x1b\xc3\x89"); assert(e.key.character==0xe9&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ e=run("\x1b[201;4u"); assert(e.key.character==0xe9&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ // base key: US layout by default
+ e=run("\x1bq"); assert(e.key.base=='q'&&e.key.modifiers==VUI_MOD_ALT);
+ e=run("\x1b!"); assert(e.key.base=='1'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ // kitty alternate keys (code:shifted:base) win over any table
+ e=run("\x1b[38::49;3u"); assert(e.key.character=='&'&&e.key.base=='1'&&e.key.modifiers==VUI_MOD_ALT);
+ e=run("\x1b[49:33:49;4u"); assert(e.key.character=='1'&&e.key.base=='1'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ // French layout table
+ assert(vui_set_layout("fr")==0&&vui_set_layout("klingon")==-1);
+ e=run("\x1b&"); assert(e.key.base=='1'&&e.key.modifiers==VUI_MOD_ALT);
+ e=run("\x1b" "1"); assert(e.key.base=='1'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ e=run("\x1b\xc3\xa9"); assert(e.key.base=='2'&&e.key.character==0xe9&&e.key.modifiers==VUI_MOD_ALT);
+ e=run("\x1b[27;5;233~"); assert(e.key.base=='2'&&e.key.modifiers==VUI_MOD_CTRL);
+ e=run("\x1b[233;7u"); assert(e.key.base=='2'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_ALT));
+ e=run("\x1b" "a"); assert(e.key.character=='a'&&e.key.base=='q');
+ e=run("\x1b" "A"); assert(e.key.character=='a'&&e.key.base=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ vui_set_layout("us");
  puts("input decoder: ok");
  return 0;}
