@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "input.h"
+#include "scancode.h"
 
 static VuiShiftProbe shift_probe;
 
@@ -180,20 +181,6 @@ static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
 
 // -- Normalising letters and finding the physical key --
 
-// Simple lowercase of the alphabets that have it: Latin (with accents), Greek, Cyrillic. 0 if `c` isn't uppercase.
-static uint32_t lower_of(uint32_t c)
-{
-    if (c >= 'A' && c <= 'Z') return c + 32;
-    if (c >= 0xC0 && c <= 0xDE && c != 0xD7) return c + 32;
-    if (c == 0x178) return 0xFF;
-    if ((c >= 0x100 && c <= 0x137) || (c >= 0x14A && c <= 0x177)) return (c & 1) ? 0 : c + 1;
-    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E)) return (c & 1) ? c + 1 : 0;
-    if (c >= 0x391 && c <= 0x3A9 && c != 0x3A2) return c + 32;
-    if (c >= 0x410 && c <= 0x42F) return c + 32;
-    if (c >= 0x400 && c <= 0x40F) return c + 80;
-    return 0;
-}
-
 // What a layout types, as the key it is on a US keyboard: typed character -> base key, and whether Shift is held
 // for that character. Characters not listed are their own base key (letters, and digits on US).
 typedef struct { uint32_t typed, base; uint8_t shift; } LayoutKey;
@@ -253,7 +240,7 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
 
     if (e.type == VUI_EVENT_KEY && e.key.key == VUI_KEY_CHAR) {
         VuiKeyEvent *k = &e.key;
-        uint32_t lc = lower_of(k->character);
+        uint32_t lc = vui_cp_lower_of(k->character);
 
         if (lc != 0) {
             k->character = lc;
@@ -280,6 +267,10 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
             // like a letter: the key's unshifted character, and Shift is the flag (Alt+Shift+é, not Alt+2)
             k->character = unshifted_of(k->base);
         }
+    }
+
+    if (e.type == VUI_EVENT_KEY && e.key.key == VUI_KEY_CHAR && e.key.scancode == VUI_SC_NONE) {
+        e.key.scancode = vui_scancode_from_base(e.key.base); // a terminal cannot say; the base key identifies it
     }
 
     if (e.type != VUI_EVENT_NONE) decoder->shift_state = -1; // consumed by this event, whatever it was

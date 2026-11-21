@@ -59,6 +59,36 @@ typedef enum {
     VUI_KEY_F7, VUI_KEY_F8, VUI_KEY_F9, VUI_KEY_F10, VUI_KEY_F11, VUI_KEY_F12,
 } VuiKey;
 
+// A physical key, named by the character it types on a US keyboard, numbered like USB HID usages (what SDL,
+// the web's KeyboardEvent.code and macOS key tables all convert to). Layout independent: the key typing '&' on
+// AZERTY is VUI_SC_1. 0 = unknown (a terminal that cannot tell).
+typedef enum {
+    VUI_SC_NONE = 0,
+    VUI_SC_A = 4, VUI_SC_B, VUI_SC_C, VUI_SC_D, VUI_SC_E, VUI_SC_F, VUI_SC_G, VUI_SC_H, VUI_SC_I, VUI_SC_J,
+    VUI_SC_K, VUI_SC_L, VUI_SC_M, VUI_SC_N, VUI_SC_O, VUI_SC_P, VUI_SC_Q, VUI_SC_R, VUI_SC_S, VUI_SC_T,
+    VUI_SC_U, VUI_SC_V, VUI_SC_W, VUI_SC_X, VUI_SC_Y, VUI_SC_Z,
+    VUI_SC_1 = 30, VUI_SC_2, VUI_SC_3, VUI_SC_4, VUI_SC_5, VUI_SC_6, VUI_SC_7, VUI_SC_8, VUI_SC_9, VUI_SC_0,
+    VUI_SC_ENTER = 40, VUI_SC_ESCAPE, VUI_SC_BACKSPACE, VUI_SC_TAB, VUI_SC_SPACE,
+    VUI_SC_MINUS = 45, VUI_SC_EQUALS, VUI_SC_LBRACKET, VUI_SC_RBRACKET, VUI_SC_BACKSLASH,
+    VUI_SC_NONUS_HASH = 50, VUI_SC_SEMICOLON, VUI_SC_APOSTROPHE, VUI_SC_GRAVE, VUI_SC_COMMA, VUI_SC_PERIOD,
+    VUI_SC_SLASH, VUI_SC_CAPSLOCK,
+    VUI_SC_F1 = 58, VUI_SC_F2, VUI_SC_F3, VUI_SC_F4, VUI_SC_F5, VUI_SC_F6, VUI_SC_F7, VUI_SC_F8, VUI_SC_F9,
+    VUI_SC_F10, VUI_SC_F11, VUI_SC_F12,
+    VUI_SC_PRINTSCREEN = 70, VUI_SC_SCROLLLOCK, VUI_SC_PAUSE, VUI_SC_INSERT, VUI_SC_HOME, VUI_SC_PAGEUP,
+    VUI_SC_DELETE, VUI_SC_END, VUI_SC_PAGEDOWN, VUI_SC_RIGHT, VUI_SC_LEFT, VUI_SC_DOWN, VUI_SC_UP,
+    VUI_SC_NUMLOCK = 83, VUI_SC_KP_DIVIDE, VUI_SC_KP_MULTIPLY, VUI_SC_KP_MINUS, VUI_SC_KP_PLUS, VUI_SC_KP_ENTER,
+    VUI_SC_KP_1 = 89, VUI_SC_KP_2, VUI_SC_KP_3, VUI_SC_KP_4, VUI_SC_KP_5, VUI_SC_KP_6, VUI_SC_KP_7, VUI_SC_KP_8,
+    VUI_SC_KP_9, VUI_SC_KP_0, VUI_SC_KP_PERIOD,
+    VUI_SC_NONUS_BACKSLASH = 100, // the extra key left of Z on ISO keyboards ('<' on AZERTY)
+    VUI_SC_APPLICATION = 101,
+    VUI_SC_LCTRL = 224, VUI_SC_LSHIFT, VUI_SC_LALT, VUI_SC_LGUI, VUI_SC_RCTRL, VUI_SC_RSHIFT, VUI_SC_RALT, VUI_SC_RGUI
+} VuiScancode;
+
+// The character a physical key types on a US keyboard, unshifted ('1' for VUI_SC_1, 'q' for VUI_SC_Q); 0 for keys
+// that type none. And the other way: the key typing that US character (0 if none).
+VuiCodepoint vui_scancode_base(VuiScancode sc);
+VuiScancode vui_scancode_from_base(VuiCodepoint base);
+
 typedef struct {
     VuiKey key;
     VuiModifiers modifiers;
@@ -67,6 +97,7 @@ typedef struct {
     // key typing '&' on AZERTY has base '1' (and Shift held, even though no terminal says so when it sends a '1').
     // Bind `character` for "the key labelled Q", `base` for "the key in the number row". See vui_set_layout().
     VuiCodepoint base;
+    VuiScancode scancode; // the physical key (exact where the platform knows it, else derived from `base`, 0 if unknown)
 } VuiKeyEvent;
 
 // The keyboard layout, for terminals that can't tell which physical key was pressed (most can't: kitty, foot,

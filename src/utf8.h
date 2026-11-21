@@ -35,4 +35,7 @@ unsigned int vui_utf8_to_cps(const char *str, uint32_t *out, unsigned int cap);
 // character when size is too small; returns the bytes written (without the NUL).
 size_t vui_cps_to_utf8(const uint32_t *cps, unsigned int n, char *out, size_t size);
 
+// The lowercase of an uppercase letter (Latin with accents, Greek, Cyrillic), 0 if `c` is not uppercase.
+uint32_t vui_cp_lower_of(uint32_t c);
+
 #endif

@@ -42,7 +42,12 @@ static inline void vtout_start(void)
         : term != NULL && strstr(term, "256") ? 8 : 4);
 
     // extended key reporting is negotiated by the POSIX backend (keys_start), the Windows console needs none
-    fputs("\033[?1049h\033[?25l\033[?2004h", stdout); // alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), bracketed paste
+#ifdef VTOUT_NO_PASTE // the Windows backend reads keys natively, a paste arrives as key records
+    fputs("\033[?1049h\033[?25l", stdout);
+#else
+    fputs("\033[?1049h\033[?25l\033[?2004h", stdout);
+#endif
+    //  alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), bracketed paste
     fflush(stdout);
 }
 

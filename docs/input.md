@@ -57,7 +57,13 @@ Where `base` comes from:
 2. **A layout table**, for every other terminal (GNOME Terminal, xterm, the Linux console...), which cannot tell:
    `vui_set_layout("fr")` or `VUI_LAYOUT=fr` in the environment (`us`, the default, and `fr` for now; a table is a
    few lines in `src/input.c`, contributions welcome). A terminal that does send alternate keys never needs it.
-3. Windows: not done yet (the console gives scan codes, which would be exact).
+3. **Windows:** exact, from the console itself. The backend reads `KEY_EVENT` records (virtual key, scan code, control
+   state) and `MOUSE_EVENT` records natively, with no VT input mode and no escape sequences, so it does not depend on
+   the terminal (Windows Terminal, conhost, ssh into it all deliver the same records). AltGr (Right Alt + Left Ctrl)
+   that typed a character is text. Translation is in `src/winkeys.c` (pure, tested on every platform).
+
+Every key event also carries `scancode`, the physical key (`VuiScancode`, USB HID numbering, so web, macOS and Linux
+tables convert to it). It is exact where the platform reports it (Windows today) and derived from `base` elsewhere.
 
 `Ctrl+é` and friends have no legacy encoding: they only arrive if the terminal speaks modifyOtherKeys or the kitty
 protocol (tier 2-3 above). When they arrive, `base` works for them like for any key.

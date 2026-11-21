@@ -1,6 +1,7 @@
-// Windows backend: the console is switched to VT mode in both directions, so the same
-// escape sequences and the same decoder as on POSIX apply; this file only handles raw
-// console modes, size, resize events and waiting.
+// Windows backend. Output goes through the console's VT processing (the same escape sequences as on POSIX), but
+// input is read natively: KEY_EVENT records carry the virtual key, the scan code (the physical key) and the
+// modifier state, MOUSE_EVENT records the mouse. src/winkeys.c turns them into events (it is pure and tested);
+// no escape sequences are decoded here and nothing depends on what a terminal chooses to send.
 #include <fcntl.h>
 #include <io.h>
 #include <stdio.h>
@@ -8,8 +9,9 @@
 #include <windows.h>
 
 #include "../../include/vaporui.h"
-#include "../input.h"
+#include "../winkeys.h"
 #include "../ctx.h"
+#define VTOUT_NO_PASTE
 #define VUI_OUT_BUFFER 16384 // one console write per few frames beats a write per cell
 #include "vtout.h"
 
@@ -27,12 +29,17 @@ static HANDLE con_in = INVALID_HANDLE_VALUE, con_out = INVALID_HANDLE_VALUE;
 static DWORD saved_in_mode, saved_out_mode;
 static UINT saved_cp;
 static int saved_stdout_fd = -1; // the program's real stdout while the UI draws on the console
-static VuiInputDecoder input_decoder;
-
-// UTF-8 bytes of the last key record not yet given to the decoder
-static unsigned char pending[8];
-static unsigned int pending_len, pending_pos;
+static int mouse_level;
+static unsigned int prev_buttons;
 static WCHAR high_surrogate;
+
+// Console input mode: no line editing, echo or Ctrl-C handling (Ctrl-C arrives as a key). Quick-edit (selecting
+// text with the mouse) stays on until the app asks for mouse input.
+static DWORD input_mode(void)
+{
+    return mouse_level > 0 ? (ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT)
+                           : (ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_QUICK_EDIT_MODE);
+}
 
 int vui_platform_init(void)
 {
@@ -47,8 +54,7 @@ int vui_platform_init(void)
         return -1;
     }
 
-    // No line editing, echo, or Ctrl-C handling (Ctrl-C arrives as a key); keys come as VT sequences
-    in_mode = ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_VIRTUAL_TERMINAL_INPUT;
+    in_mode = input_mode();
     out_mode = ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
 
     if (!SetConsoleMode(con_in, in_mode) || !SetConsoleMode(con_out, out_mode)) {
@@ -70,7 +76,9 @@ int vui_platform_init(void)
         return -1;
     }
 
-    vui_input_reset(&input_decoder);
+    mouse_level = 0;
+    prev_buttons = 0;
+    high_surrogate = 0;
     vui_clipboard_hook = vtout_osc52_copy;
     vtout_start();
 
@@ -93,7 +101,9 @@ void vui_platform_shutdown(void)
 
 void vui_platform_set_mouse(int level)
 {
-    vtout_set_mouse(level);
+    mouse_level = level;
+    prev_buttons = 0;
+    SetConsoleMode(con_in, input_mode());
 }
 
 int vui_platform_get_size(VuiSize *size)
@@ -121,44 +131,9 @@ uint64_t vui_platform_now_ms(void)
     return GetTickCount64();
 }
 
-// UTF-16 unit -> UTF-8 in `pending` (a lone surrogate half waits for its pair)
-static void queue_utf16(WCHAR w)
-{
-    unsigned long cp = w;
-
-    if (w >= 0xD800 && w < 0xDC00) {
-        high_surrogate = w;
-        return;
-    }
-
-    if (w >= 0xDC00 && w < 0xE000) {
-        if (high_surrogate == 0) return;
-        cp = 0x10000 + (((unsigned long)high_surrogate - 0xD800) << 10) + (w - 0xDC00);
-    }
-
-    high_surrogate = 0;
-    pending_len = pending_pos = 0;
-
-    if (cp < 0x80) {
-        pending[pending_len++] = (unsigned char)cp;
-    } else if (cp < 0x800) {
-        pending[pending_len++] = 0xC0 | (cp >> 6);
-        pending[pending_len++] = 0x80 | (cp & 0x3F);
-    } else if (cp < 0x10000) {
-        pending[pending_len++] = 0xE0 | (cp >> 12);
-        pending[pending_len++] = 0x80 | ((cp >> 6) & 0x3F);
-        pending[pending_len++] = 0x80 | (cp & 0x3F);
-    } else {
-        pending[pending_len++] = 0xF0 | (cp >> 18);
-        pending[pending_len++] = 0x80 | ((cp >> 12) & 0x3F);
-        pending[pending_len++] = 0x80 | ((cp >> 6) & 0x3F);
-        pending[pending_len++] = 0x80 | (cp & 0x3F);
-    }
-}
-
 int vui_platform_input_pending(void)
 {
-    return pending_pos < pending_len || WaitForSingleObject(con_in, 0) == WAIT_OBJECT_0;
+    return WaitForSingleObject(con_in, 0) == WAIT_OBJECT_0;
 }
 
 // A watched fd is a CRT fd (_pipe, _open): pipes are readable when they hold data or are
@@ -175,6 +150,69 @@ static int fd_ready(int fd)
     return !PeekNamedPipe(h, NULL, 0, NULL, &avail, NULL) || avail > 0;
 }
 
+// The key typing nothing but itself on the foreground window's layout: ToUnicodeEx with an empty key state (and
+// the "don't touch the keyboard state" flag, so a dead key stays pending). 0 for none or a dead key.
+static uint32_t unshifted_char(unsigned vk, unsigned scan)
+{
+    BYTE keys[256] = { 0 };
+    WCHAR buf[4];
+    DWORD thread = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+    int n = ToUnicodeEx(vk, scan, keys, buf, 4, 0x4, GetKeyboardLayout(thread));
+
+    return n == 1 ? buf[0] : 0;
+}
+
+static VuiEvent key_record(const KEY_EVENT_RECORD *k)
+{
+    VuiEvent event = { .type = VUI_EVENT_NONE };
+    uint32_t uc = k->uChar.UnicodeChar;
+
+    if (!k->bKeyDown) {
+        return event; // releases are not reported; shortcut: a held key repeats as separate records, the repeat count is ignored
+    }
+
+    if (uc >= 0xD800 && uc < 0xDC00) { // half of a surrogate pair: wait for the other
+        high_surrogate = (WCHAR)uc;
+        return event;
+    }
+
+    if (uc >= 0xDC00 && uc < 0xE000) {
+        uc = high_surrogate == 0 ? 0 : 0x10000 + (((uint32_t)high_surrogate - 0xD800) << 10) + (uc - 0xDC00);
+    }
+
+    high_surrogate = 0;
+
+    if (!vui_winkey_translate(k->wVirtualKeyCode, k->wVirtualScanCode, uc, unshifted_char(k->wVirtualKeyCode, k->wVirtualScanCode),
+                              k->dwControlKeyState, &event)) {
+        event.type = VUI_EVENT_NONE;
+    }
+
+    return event;
+}
+
+static VuiEvent mouse_record(const MOUSE_EVENT_RECORD *m)
+{
+    VuiEvent event = { .type = VUI_EVENT_NONE };
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    int x, y;
+
+    if (!GetConsoleScreenBufferInfo(con_out, &info)) {
+        return event;
+    }
+
+    // positions are in the screen buffer; the app draws in the visible window
+    x = m->dwMousePosition.X - info.srWindow.Left;
+    y = m->dwMousePosition.Y - info.srWindow.Top;
+
+    if (x < 0 || y < 0 || !vui_winmouse_translate(m->dwButtonState, prev_buttons, m->dwEventFlags, (unsigned)x, (unsigned)y,
+                                                   m->dwControlKeyState, mouse_level, &event)) {
+        event.type = VUI_EVENT_NONE;
+    }
+
+    prev_buttons = m->dwButtonState & 7u;
+    return event;
+}
+
 // shortcut: with fds watched, the wait is sliced into 10 ms polls (the console handle and pipes
 // can't share one wait); idle cost is ~100 wakeups/s. Upgrade to overlapped reads / worker threads.
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)
@@ -182,21 +220,7 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
     VuiEvent event = { .type = VUI_EVENT_NONE };
     INPUT_RECORD rec;
     DWORD got;
-    int esc_first;
-    uint64_t end;
-
-    if (pending_pos < pending_len) {
-        memset(ready, 0, n);
-        return vui_input_feed(&input_decoder, pending[pending_pos++]);
-    }
-
-    esc_first = vui_input_pending_escape(&input_decoder) && (timeout_ms < 0 || VUI_ESCAPE_TIMEOUT_MS <= timeout_ms);
-
-    if (esc_first) {
-        timeout_ms = VUI_ESCAPE_TIMEOUT_MS;
-    }
-
-    end = vui_platform_now_ms() + (timeout_ms < 0 ? 0 : (unsigned int)timeout_ms);
+    uint64_t end = vui_platform_now_ms() + (timeout_ms < 0 ? 0 : (unsigned int)timeout_ms);
 
     for (;;) {
         DWORD wait = timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms;
@@ -220,7 +244,7 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         }
 
         if (n == 0 || (timeout_ms >= 0 && vui_platform_now_ms() >= end)) {
-            return esc_first ? vui_input_timeout(&input_decoder) : event;
+            return event;
         }
     }
 
@@ -228,7 +252,8 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return event;
     }
 
-    if (rec.EventType == WINDOW_BUFFER_SIZE_EVENT) {
+    switch (rec.EventType) {
+    case WINDOW_BUFFER_SIZE_EVENT: {
         VuiSize size;
 
         if (vui_platform_get_size(&size) == 0) {
@@ -239,13 +264,8 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return event;
     }
 
-    if (rec.EventType == KEY_EVENT && rec.Event.KeyEvent.bKeyDown && rec.Event.KeyEvent.uChar.UnicodeChar != 0) {
-        queue_utf16(rec.Event.KeyEvent.uChar.UnicodeChar);
-
-        if (pending_pos < pending_len) {
-            return vui_input_feed(&input_decoder, pending[pending_pos++]);
-        }
+    case KEY_EVENT:   return key_record(&rec.Event.KeyEvent);
+    case MOUSE_EVENT: return mouse_record(&rec.Event.MouseEvent);
+    default:          return event;
     }
-
-    return event;
 }

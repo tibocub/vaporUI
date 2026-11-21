@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../include/vaporui.h"
 #include "../src/utf8.h"
@@ -74,6 +75,12 @@ static const char *key_name(const VuiKeyEvent *event, char *buf, size_t bufsize)
             buf[n++] = ']';
             buf[n] = 0;
         }
+    }
+
+    if (event->scancode != VUI_SC_NONE) { // the physical key, where the platform knows it
+        size_t len = strlen(buf);
+
+        snprintf(buf + len, bufsize - len, " sc=%d", (int)event->scancode);
     }
 
     return buf;

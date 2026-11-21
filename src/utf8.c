@@ -190,3 +190,17 @@ unsigned int vui_strn_width(const char *str, size_t n)
 
     return w;
 }
+
+// Simple lowercase of the alphabets that have it: Latin (with accents), Greek, Cyrillic. 0 if `c` isn't uppercase.
+uint32_t vui_cp_lower_of(uint32_t c)
+{
+    if (c >= 'A' && c <= 'Z') return c + 32;
+    if (c >= 0xC0 && c <= 0xDE && c != 0xD7) return c + 32;
+    if (c == 0x178) return 0xFF;
+    if ((c >= 0x100 && c <= 0x137) || (c >= 0x14A && c <= 0x177)) return (c & 1) ? 0 : c + 1;
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E)) return (c & 1) ? c + 1 : 0;
+    if (c >= 0x391 && c <= 0x3A9 && c != 0x3A2) return c + 32;
+    if (c >= 0x410 && c <= 0x42F) return c + 32;
+    if (c >= 0x400 && c <= 0x40F) return c + 80;
+    return 0;
+}

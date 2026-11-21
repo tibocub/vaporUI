@@ -63,8 +63,10 @@ wintest: build
 	x86_64-w64-mingw32-gcc $(CFLAGS) -Isrc tests/win_watch.c $(SRCS) $(WIN32) -o build/win-watch.exe
 
 test: build
-	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c -o build/input-test
+	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c src/scancode.c -o build/input-test
 	build/input-test
+	$(CC) $(CFLAGS) -Isrc tests/winkeys.c src/winkeys.c src/scancode.c src/utf8.c -o build/winkeys-test
+	build/winkeys-test
 	$(CC) $(CFLAGS) tests/widgets.c tests/platform_stub.c $(SRCS) -o build/widgets-test
 	build/widgets-test
 
