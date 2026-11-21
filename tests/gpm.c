@@ -38,7 +38,7 @@ int main(void)
     ev(b, 0, 0, 3, 3, 1, 1);   assert(vui_gpm_event(b, 1, &e) && e.mouse.button == VUI_MOUSE_WHEEL_UP);
     ev(b, 0, 0, 3, 3, 1, -1);  assert(vui_gpm_event(b, 1, &e) && e.mouse.button == VUI_MOUSE_WHEEL_DOWN);
     ev(b, 4, 0, 10, 5, 4, 0);  assert(!vui_gpm_event(b, 0, &e)); // mouse off
-    ev(b, 4, 0, 0, 0, 4, 0);   assert(!vui_gpm_event(b, 1, &e)); // 1-based: 0 is not a cell
+    ev(b, 4, 0, 0, 0, 2, 0);   assert(vui_gpm_event(b, 1, &e) && e.mouse.x == 0 && e.mouse.y == 0); // a drag past the left/top edge stays at cell 0
 
     puts("gpm: ok");
     return 0;

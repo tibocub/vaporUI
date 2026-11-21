@@ -28,7 +28,12 @@ int vui_gpm_event(const unsigned char in[VUI_GPM_EVENT_SIZE], int level, VuiEven
 
     memcpy(&type, in + 12, sizeof(type)); // host byte order, like the rest of the struct
 
-    if (level <= 0 || x < 1 || y < 1) return 0;
+    if (level <= 0) return 0;
+
+    // The daemon clamps to 1..cols, but a drag or a release may go one cell past the edge (0 or cols + 1, with the
+    // margin flag set). Dropping those froze a selection at the left edge: keep them at the nearest cell.
+    if (x < 1) x = 1;
+    if (y < 1) y = 1;
 
     *out = (VuiEvent){ .type = VUI_EVENT_MOUSE };
     m->x = (unsigned)(x - 1);
