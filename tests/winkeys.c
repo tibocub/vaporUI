@@ -65,6 +65,18 @@ int main(void)
     assert(vui_winmouse_translate(2, 0, 0, 1, 1, 0, 1, &e) && e.mouse.button == VUI_MOUSE_RIGHT);
     assert(!vui_winmouse_translate(1, 0, 0, 1, 1, 0, 0, &e)); // mouse off
 
+    // key state: releases, and modifiers going down (for vui_set_key_release)
+    {
+        VuiEvent e;
+
+        assert(!vui_winkey_state('Q', 0x10, 1, 'q', 0, &e));                              // a plain press is translate's job
+        assert(vui_winkey_state(0x12, 0x38, 1, 0, VUI_WIN_LEFT_ALT, &e) && e.key.key == VUI_KEY_NONE && !e.key.release
+               && e.key.modifiers == VUI_MOD_ALT && e.key.scancode == VUI_SC_LALT);
+        assert(vui_winkey_state(0x12, 0x38, 0, 0, 0, &e) && e.key.key == VUI_KEY_NONE && e.key.release && e.key.modifiers == 0);
+        assert(vui_winkey_state('Q', 0x10, 0, 'a', 0, &e) && e.key.key == VUI_KEY_CHAR && e.key.character == 'a' && e.key.release);
+        assert(vui_winkey_state(0x0D, 0x1C, 0, 0, 0, &e) && e.key.key == VUI_KEY_ENTER && e.key.release);
+    }
+
     puts("winkeys: ok");
     return 0;
 }

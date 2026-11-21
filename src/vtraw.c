@@ -123,14 +123,10 @@ static uint32_t combine(const VuiVtRaw *raw, uint32_t d, uint32_t ch)
     return 0;
 }
 
-static void press(VuiVtRaw *raw, unsigned int code, int was_down)
+// Modifiers held (the key just pressed counts, the one just released doesn't: state after the event)
+static VuiModifiers held(const VuiVtRaw *raw, int *altgr_out)
 {
-    VuiVtEntry e0 = raw->map[0][code];
     int shift = 0, altgr = 0, ctrl = 0, alt = 0;
-    VuiModifiers mods;
-    VuiScancode sc = vui_scancode_from_linux(code);
-    VuiKey key;
-    VuiEvent ev = { .type = VUI_EVENT_KEY };
 
     for (unsigned int k = 0; k < VUI_VT_KEYS; k++) {
         unsigned int g;
@@ -143,7 +139,47 @@ static void press(VuiVtRaw *raw, unsigned int code, int was_down)
         alt |= g == KG_ALT;
     }
 
-    mods = (shift ? VUI_MOD_SHIFT : 0) | (ctrl ? VUI_MOD_CTRL : 0) | (alt ? VUI_MOD_ALT : 0);
+    if (altgr_out != NULL) *altgr_out = altgr;
+    return (shift ? VUI_MOD_SHIFT : 0) | (ctrl ? VUI_MOD_CTRL : 0) | (alt ? VUI_MOD_ALT : 0);
+}
+
+static void release(VuiVtRaw *raw, unsigned int code)
+{
+    VuiVtEntry e0 = raw->map[0][code];
+    int altgr;
+    VuiEvent ev = { .type = VUI_EVENT_KEY };
+
+    ev.key.release = 1;
+    ev.key.scancode = vui_scancode_from_linux(code);
+    ev.key.modifiers = held(raw, &altgr);
+    ev.key.key = e0.type == VT_SHIFT ? VUI_KEY_NONE : named(raw, e0);
+
+    if (ev.key.key == VUI_KEY_NONE && e0.type != VT_SHIFT) {
+        VuiVtEntry plain = raw->map[altgr ? 2 : 0][code];
+
+        if (plain.type == VT_CHAR || plain.type == VT_LETTER) {
+            ev.key.key = VUI_KEY_CHAR;
+            ev.key.character = plain.value;
+            ev.key.base = vui_scancode_base(ev.key.scancode) != 0 ? vui_scancode_base(ev.key.scancode) : plain.value;
+        }
+    }
+
+    push(raw, ev);
+}
+
+static void press(VuiVtRaw *raw, unsigned int code, int was_down)
+{
+    VuiVtEntry e0 = raw->map[0][code];
+    int altgr, ctrl, shift, alt;
+    VuiModifiers mods = held(raw, &altgr);
+    VuiScancode sc = vui_scancode_from_linux(code);
+    VuiKey key;
+    VuiEvent ev = { .type = VUI_EVENT_KEY };
+
+    shift = (mods & VUI_MOD_SHIFT) != 0;
+    ctrl = (mods & VUI_MOD_CTRL) != 0;
+    alt = (mods & VUI_MOD_ALT) != 0;
+    ev.key.repeat = was_down != 0;
 
     if (e0.type == VT_FN && e0.value < 12 && ctrl && alt) { // the kernel's VT switch, which raw mode turned off
         raw->switch_to = (int)e0.value + 1;
@@ -152,6 +188,16 @@ static void press(VuiVtRaw *raw, unsigned int code, int was_down)
 
     if (e0.type == VT_SPEC && (e0.value == K_CAPS || e0.value == K_NUM)) {
         if (!was_down) (e0.value == K_CAPS ? &raw->caps : &raw->num)[0] ^= 1;
+        return;
+    }
+
+    if (e0.type == VT_SHIFT) { // a modifier on its own: only for apps that asked
+        if (vui_key_release_reports) {
+            ev.key.scancode = sc;
+            ev.key.modifiers = mods;
+            push(raw, ev);
+        }
+
         return;
     }
 
@@ -239,6 +285,7 @@ VuiEvent vui_vtraw_feed(VuiVtRaw *raw, uint8_t b)
         press(raw, code, was);
     } else {
         raw->down[code] = 0;
+        if (vui_key_release_reports) release(raw, code);
     }
 
     return vui_vtraw_pop(raw);

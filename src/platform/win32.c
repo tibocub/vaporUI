@@ -10,6 +10,7 @@
 
 #include "../../include/vaporui.h"
 #include "../winkeys.h"
+#include "../scancode.h"
 #include "../input.h"
 #include "../ctx.h"
 #define VTOUT_NO_PASTE
@@ -173,13 +174,25 @@ static uint32_t unshifted_char(unsigned vk, unsigned scan)
     return n == 1 ? buf[0] : 0;
 }
 
+static unsigned char vk_down[256]; // keys seen going down, to tell auto-repeat from a fresh press
+
 static VuiEvent key_record(const KEY_EVENT_RECORD *k)
 {
     VuiEvent event = { .type = VUI_EVENT_NONE };
     uint32_t uc = k->uChar.UnicodeChar;
+    unsigned vk = k->wVirtualKeyCode;
+    int repeat = vk < 256 && vk_down[vk];
+
+    if (vk < 256) vk_down[vk] = k->bKeyDown != 0;
 
     if (!k->bKeyDown) {
-        return event; // releases are not reported; shortcut: a held key repeats as separate records, the repeat count is ignored
+        // releases only for apps that asked (vui_set_key_release); a held key repeats as separate records
+        if (!vui_key_release_reports || !vui_winkey_state(vk, k->wVirtualScanCode, 0, unshifted_char(vk, k->wVirtualScanCode),
+                                                          k->dwControlKeyState, &event)) {
+            event.type = VUI_EVENT_NONE;
+        }
+
+        return event;
     }
 
     if (uc >= 0xD800 && uc < 0xDC00) { // half of a surrogate pair: wait for the other
@@ -196,8 +209,11 @@ static VuiEvent key_record(const KEY_EVENT_RECORD *k)
     if (!vui_winkey_translate(k->wVirtualKeyCode, k->wVirtualScanCode, uc, unshifted_char(k->wVirtualKeyCode, k->wVirtualScanCode),
                               k->dwControlKeyState, &event)) {
         event.type = VUI_EVENT_NONE;
+        if (vui_key_release_reports && vui_winkey_state(vk, k->wVirtualScanCode, 1, 0, k->dwControlKeyState, &event)) event.key.repeat = repeat;
+        return event;
     }
 
+    event.key.repeat = repeat;
     return event;
 }
 

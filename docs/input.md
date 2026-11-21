@@ -19,6 +19,16 @@ Shift is held (Alt+Shift+q is `'q'`, ALT|SHIFT, however the terminal reports it:
 `XK_q` + `ShiftMask`. Symbols can't be normalised: a terminal sends the shifted character (`!`, or `1` on AZERTY),
 so bind what the layout types.
 
+## Key release and repeat
+
+Terminals don't report a key going up, but two backends see it: the Linux console (raw keycodes) and the Windows
+console. `vui_set_key_release(1)` opts in: you then get `VUI_EVENT_KEY` with `key.release == 1` for every key that
+goes up, and `key == VUI_KEY_NONE` events (with the `scancode`, `VUI_SC_LALT` and so on) when a modifier goes down or
+up, so "Alt still held" is `modifiers & VUI_MOD_ALT` on the latest event (modifiers are what is held *after* the event).
+`key.repeat` is 1 for the auto-repeat of a held key (those two backends only, always on). `vui_dispatch()` ignores both
+kinds of event, so widgets never see them: read them in your loop or the `vui_run` handler. Everywhere else (terminals
+in a window, ssh) the option does nothing.
+
 ## What a terminal can actually send
 
 A terminal only reports what it encodes. Three tiers, all handled in `src/vt.c` / `src/input.c`:

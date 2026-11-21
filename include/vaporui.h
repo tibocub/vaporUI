@@ -98,7 +98,16 @@ typedef struct {
     // Bind `character` for "the key labelled Q", `base` for "the key in the number row". See vui_set_layout().
     VuiCodepoint base;
     VuiScancode scancode; // the physical key (exact where the platform knows it, else derived from `base`, 0 if unknown)
+    unsigned char repeat;  // 1: auto-repeat of a key already held (raw backends: Linux VT, Windows console; 0 elsewhere)
+    // 1: the key went up. Only with vui_set_key_release(1), and only where the platform sees key releases (Linux VT,
+    // Windows console; terminals don't report them). `modifiers` is then what is held after the event; a release of a
+    // modifier key has key == VUI_KEY_NONE and its `scancode` (VUI_SC_LALT...). vui_dispatch() ignores these events,
+    // so widgets never see them: read them from vui_next_event() / the vui_run handler.
+    unsigned char release;
 } VuiKeyEvent;
+
+// Opt in to key release events, and to KEY events with key == VUI_KEY_NONE for a modifier going down or up. Off by default.
+void vui_set_key_release(int on);
 
 // The keyboard layout, for terminals that can't tell which physical key was pressed (most can't: kitty, foot,
 // WezTerm, Ghostty and Alacritty can). "us" (the default), "fr". NULL or "" = $VUI_LAYOUT, then what the OS says it is (Linux: X/GNOME/console

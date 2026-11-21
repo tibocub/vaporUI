@@ -93,3 +93,7 @@ VuiScancode vui_scancode_from_linux(unsigned int code)
     default:  return code < 0x59 ? vui_scancode_from_set1(code, 0) : VUI_SC_NONE;
     }
 }
+
+int vui_key_release_reports;
+
+void vui_set_key_release(int on) { vui_key_release_reports = on != 0; }

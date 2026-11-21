@@ -116,6 +116,19 @@ int main(void)
     // a Ctrl+Alt+F-key forgets nothing by itself; release_all does
     feed(29, 1); vui_vtraw_release_all(&raw); tap(30); assert(got[0].type == VUI_EVENT_TEXT);
 
+    // releases and bare modifiers only when asked: Shift down/up, then a key held (repeat) and let go
+    vui_set_key_release(1);
+    feed(42, 1); assert(ngot == 1 && got[0].key.key == VUI_KEY_NONE && got[0].key.scancode == VUI_SC_LSHIFT && got[0].key.modifiers == VUI_MOD_SHIFT && !got[0].key.release);
+    feed(42, 0); assert(ngot == 2 && got[1].key.key == VUI_KEY_NONE && got[1].key.release && got[1].key.modifiers == 0);
+    feed(30, 1); assert(ngot == 1 && !got[0].key.repeat);
+    feed(30, 1); assert(ngot == 1 && got[0].type == VUI_EVENT_TEXT); // plain typing stays text
+    feed(29, 1); feed(30, 1); assert(got[ngot - 1].key.repeat == 0 || got[ngot - 1].key.key == VUI_KEY_CHAR);
+    feed(30, 1); assert(got[ngot - 1].key.key == VUI_KEY_CHAR && got[ngot - 1].key.repeat); // Ctrl+q held: a repeat
+    feed(30, 0); assert(got[ngot - 1].key.release && got[ngot - 1].key.key == VUI_KEY_CHAR && got[ngot - 1].key.character == 'q' && got[ngot - 1].key.modifiers == VUI_MOD_CTRL);
+    feed(29, 0); assert(got[ngot - 1].key.release && got[ngot - 1].key.key == VUI_KEY_NONE && got[ngot - 1].key.scancode == VUI_SC_LCTRL && got[ngot - 1].key.modifiers == 0);
+    vui_set_key_release(0);
+    feed(30, 1); feed(30, 0); assert(ngot == 1); // off again: no release event
+
     puts("vtraw: ok");
     return 0;
 }

@@ -331,6 +331,9 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
     VuiNode *target, *handler;
     int modal, hit_overlay = -1;
 
+    // key releases and bare modifiers (vui_set_key_release) are for the app's own loop, never for widgets
+    if (event->type == VUI_EVENT_KEY && (event->key.release || event->key.key == VUI_KEY_NONE)) return 0;
+
     ui->root = root;
     vui_overlays_free(ui);
 
