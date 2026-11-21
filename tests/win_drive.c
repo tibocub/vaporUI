@@ -85,6 +85,8 @@ int main(int argc, char **argv)
     wchar_t cmd[1024] = L"";
     char line[512], st[400];
     STARTUPINFOW si = {sizeof si};
+    wchar_t title[64];
+    int attached;
     PROCESS_INFORMATION pi;
     int i = 1;
     const char *klid = NULL;
@@ -97,11 +99,14 @@ int main(int argc, char **argv)
         wcscat(cmd, cmd[0] ? L" " : L"");
         wcscat(cmd, a);
     }
+    swprintf(title, 64, L"win_drive_%lu", GetCurrentProcessId());
+    si.lpTitle = title; /* lets us find the window when AttachConsole is refused */
     if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) { fprintf(stderr, "CreateProcess: %lu\n", GetLastError()); return 2; }
     Sleep(1500);
     FreeConsole();
-    if (!AttachConsole(pi.dwProcessId)) { fprintf(stderr, "AttachConsole: %lu\n", GetLastError()); return 2; }
-    hwnd = GetConsoleWindow();
+    attached = AttachConsole(pi.dwProcessId);
+    hwnd = attached ? GetConsoleWindow() : FindWindowW(NULL, title); /* no attach: keys still go in, the status column stays empty */
+    if (!hwnd) { fprintf(stderr, "no console window (AttachConsole %lu)\n", GetLastError()); return 2; }
     if (klid) {
         wchar_t k[16];
         MultiByteToWideChar(CP_UTF8, 0, klid, -1, k, 16);
