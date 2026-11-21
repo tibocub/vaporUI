@@ -38,6 +38,7 @@ $(TERM_EXAMPLES): CFLAGS += -DVUI_TERMINAL
 $(TERM_EXAMPLES): $(TERM_SRCS)
 endif
 
+.DEFAULT_GOAL := all
 .PHONY: all test clean
 
 # every example builds; they double as manual regression checks (see
