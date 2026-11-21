@@ -25,6 +25,7 @@ typedef struct {
 
     uint8_t down[VUI_VT_KEYS];     // keys held
     uint8_t caps, num;             // lock state (the app owns it in raw mode)
+    uint8_t compose;               // Compose pressed: the next character acts as a dead key
     uint32_t dead;                 // accent waiting for its letter, 0 none
     int pending;                   // bytes of a 3-byte keycode already read (0, 1, 2)
     int pending_down;

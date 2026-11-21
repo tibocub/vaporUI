@@ -129,6 +129,11 @@ int main(void)
     vui_set_key_release(0);
     feed(30, 1); feed(30, 0); assert(ngot == 1); // off again: no release event
 
+    // Compose then ^ then e: the kernel's compose key turns the next character into an accent
+    set(100, KV(2, 14), KV(2, 14), 0);
+    set(10, KV(0, '^'), KV(0, '^'), 0);
+    tap(100); assert(ngot == 0); tap(10); assert(ngot == 0); tap(18); assert(ngot == 1 && got[0].text.codepoint == 0xEA);
+
     puts("vtraw: ok");
     return 0;
 }

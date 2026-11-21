@@ -166,10 +166,13 @@ static int vt_load_keymap(VuiVtRaw *raw)
     return chars >= 20 ? 0 : -1; // a map with no letters is not a keymap we understand
 }
 
+static unsigned char led_shown; // what the keyboard LEDs show: in raw mode the app owns CapsLock / NumLock
+
 static void vt_raw_stop(void)
 {
     if (vtraw == NULL) return;
 
+    ioctl(tty_fd, KDSETLED, 0xFF); // the kernel's own LED handling again
     vt_restore_mode();
     free(vtraw);
     vtraw = NULL;
@@ -210,6 +213,7 @@ static void vt_raw_start(struct termios *raw_termios)
 
     ioctl(tty_fd, KDGKBLED, &led);
     vui_vtraw_init(vtraw, (led & LED_NUM) != 0);
+    led_shown = led & (LED_NUM | LED_CAP);
 
     guard_pid = fork();
     if (guard_pid == 0) { // the guard: restores the mode when the pipe closes, however we died
@@ -267,6 +271,12 @@ static VuiEvent vt_feed(unsigned char byte)
 #ifdef __linux__
     if (vtraw != NULL) {
         VuiEvent e = vui_vtraw_feed(vtraw, byte);
+        unsigned char leds = (vtraw->caps ? LED_CAP : 0) | (vtraw->num ? LED_NUM : 0);
+
+        if (leds != led_shown) {
+            ioctl(tty_fd, KDSETLED, leds);
+            led_shown = leds;
+        }
 
         if (vtraw->switch_to != 0) {
             ioctl(tty_fd, VT_ACTIVATE, vtraw->switch_to);

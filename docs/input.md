@@ -122,7 +122,7 @@ Consequences and safety:
   dead anyway: Alt+SysRq+R, or log in over ssh and `kbd_mode -u`.
 - The kernel's console switching is off in raw mode, so Ctrl+Alt+F1..F12 are handled by the backend
   (`VT_ACTIVATE`); Alt+Fn is left to the app. Ctrl+Alt+Del does not reboot while the app runs.
-- Not done: CapsLock/NumLock LEDs, the Compose key, KT_DEAD2 accents; Shift+NumLock-style keypad inversions.
+- CapsLock/NumLock LEDs follow the app's state (KDSETLED, handed back to the kernel at exit); the Compose key makes the next character a dead key, like the kernel's (sequences are the accent table's, not X's Compose files). Not done: KT_DEAD2 accents; Shift+NumLock-style keypad inversions.
 - `VUI_RAW_KEYS=0` goes back to the old way (bytes through the kernel keymap plus a `TIOCL_GETSHIFTSTATE` probe that
   recovers Alt+é, Ctrl+& and Ctrl+Shift+letter, but not Ctrl+é). It is also used when raw mode cannot be set up (no
   permission, no keymap we understand). Over ssh or in a terminal emulator there is no VT: the terminal tiers apply.

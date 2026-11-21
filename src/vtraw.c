@@ -5,7 +5,7 @@
 
 enum { KT_LATIN, KT_FN, KT_SPEC, KT_PAD, KT_DEAD, KT_CONS, KT_CUR, KT_SHIFT, KT_META, KT_ASCII, KT_LOCK, KT_LETTER };
 enum { KG_SHIFT, KG_ALTGR, KG_CTRL, KG_ALT, KG_SHIFTL, KG_SHIFTR, KG_CTRLL, KG_CTRLR, KG_CAPSSHIFT };
-enum { K_ENTER = 1, K_CAPS = 7, K_NUM = 8 };
+enum { K_ENTER = 1, K_CAPS = 7, K_NUM = 8, K_COMPOSE = 14 };
 
 VuiVtEntry vui_vtraw_entry(unsigned int v)
 {
@@ -43,6 +43,7 @@ void vui_vtraw_init(VuiVtRaw *raw, int numlock)
     raw->caps = 0;
     raw->num = numlock != 0;
     raw->dead = 0;
+    raw->compose = 0;
     raw->pending = 0;
     raw->queue_len = 0;
     raw->switch_to = 0;
@@ -186,6 +187,11 @@ static void press(VuiVtRaw *raw, unsigned int code, int was_down)
         return;
     }
 
+    if (e0.type == VT_SPEC && e0.value == K_COMPOSE) { // like the kernel: the next character key is a dead key
+        if (!was_down) raw->compose = 1;
+        return;
+    }
+
     if (e0.type == VT_SPEC && (e0.value == K_CAPS || e0.value == K_NUM)) {
         if (!was_down) (e0.value == K_CAPS ? &raw->caps : &raw->num)[0] ^= 1;
         return;
@@ -230,6 +236,12 @@ static void press(VuiVtRaw *raw, unsigned int code, int was_down)
             ev.key.scancode = sc;
             push(raw, ev);
             return;
+        }
+
+        if (raw->compose && cp >= 0x20 && cp != 0x7f) { // Compose, then this: it is the accent
+            raw->compose = 0;
+            e.type = VT_DEAD;
+            e.value = cp;
         }
 
         if (e.type == VT_DEAD) {
