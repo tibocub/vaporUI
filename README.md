@@ -104,7 +104,8 @@ Controls:
 - [x] xterm modifyOtherKeys + kitty protocol (Ctrl+accent/symbol on AZERTY etc.); legacy terminals can't send these, see docs/input.md
 
 Windows backend (`src/platform/win32.c`):
-- [WIP] VT console mode, raw input, resize events, size: compiles with mingw and starts under Wine; untested on a real Windows console
+- [x] console output (VT), native KEY_EVENT/MOUSE_EVENT input, resize, size: checked on a real console (conhost, French layout) with `tests/win_drive.c`; known quirks in docs/input.md ("Windows: what was checked...")
+- [ ] Windows Terminal and Ghostty not tested yet
 - [x] fd watches on pipes (polled; sockets not supported); checked under Wine with `make wintest`
 
 POSIX backend (linux/macOS/BSD/NuttX):

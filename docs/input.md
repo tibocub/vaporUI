@@ -68,6 +68,35 @@ tables convert to it). It is exact where the platform reports it (Windows today)
 `Ctrl+é` and friends have no legacy encoding: they only arrive if the terminal speaks modifyOtherKeys or the kitty
 protocol (tier 2-3 above). When they arrive, `base` works for them like for any key.
 
+
+### Windows: what was checked on a real console, and known quirks
+
+`tests/win_drive.c` types real keystrokes (`SendInput`, by scan code, so the layout does the translation) into a real console window and
+reads back what `examples/input-handling` shows: `win_drive 0000040C build/input-handling.exe < chords.txt`, one chord per line
+(`Ctrl+Alt+é`, `Alt+Shift+&`, `F5`...; keys are named by their AZERTY keycap; a leading `>` skips the Escape sentinel it types first, needed
+to test dead keys). The first argument asks the window for a keyboard layout (`0000040C` French, `00000409` US). It stops rather than type
+into another window when focus is lost. Checked: a conhost window (what cmd.exe and PowerShell both run in) on the French layout, 135 chords.
+
+Works: Ctrl+letter and Ctrl+Shift+letter (`Ctrl-a [base q]`), Ctrl/Alt/Ctrl+Alt/Ctrl+Shift on the whole number row (`&é"'(-è_çà`), Alt+Shift+&
+(`Alt-Shift-& [base 1]`), `é è à ç ù € @` as text, dead keys (`^`+`e` = `ê`, `¨`+`e` = `ë`, `~`+`n` = `ñ`), arrows / Home / End / Delete /
+Backspace / Tab / Enter / F1-F12 with every modifier mix, scancodes. With the US layout loaded the same keys give the US characters.
+
+Known quirks, not fixed:
+- **AltGr + a dead key** (AltGr+é = `~` on AZERTY): an extra `Ctrl-Alt-<key>` event arrives, and its `character` is `é` in one window and the base
+  digit (`2`) in another. Suspected cause: the console has already consumed the dead key when `unshifted_char` (`win32.c`) calls `ToUnicodeEx`, so
+  it returns nothing and the base fallback is used. A dead key itself (`^`, `¨`) correctly produces nothing until its partner.
+- **Ctrl+^ / Alt+^** report `Ctrl-[` / `Alt-[`: the key is dead and has no character, so the US base (`[`) is used, which also means Escape.
+- **Ctrl+Shift+à** (Ctrl+Shift+0) never arrives. Windows or the console takes it; not investigated further.
+- `unshifted_char` asks the layout of the *foreground* window: it is wrong when the console is not the focused window (and for ssh sessions).
+- **Terminals that talk VT to ConPTY** (simulated by feeding bytes through a ConPTY, not with a real Ghostty): text (`é`, `€`), Alt+é, `ESC 2`
+  (= `Alt-Shift-é`) and modified arrows work. Ctrl+é / Ctrl+symbol sent as kitty `CSI u` or modifyOtherKeys arrive as nothing (ConPTY drops them),
+  Ctrl+Space (byte 0) is read as `Ctrl-à [base 0]`, and the scancode of ConPTY-made records differs from native ones (`sc=92` vs `80` for Left).
+  The win32-input-mode sequences Windows Terminal sends could not be fed through the test ConPTY, so that path is unverified.
+- **Not tested:** Windows Terminal and Ghostty themselves. A terminal's own shortcuts are handled before the program sees the key; Windows
+  Terminal binds Ctrl+Shift+letters, Alt+Shift+-/+/D, Ctrl+Alt+digit, Alt+arrows, Ctrl+Tab, Alt+Enter, F11 and Ctrl+=/- by default (from its
+  documentation, not checked here): if a Ctrl or Alt combo is missing there, change the terminal's bindings.
+- Alt+Enter, Alt+Space, Alt+Tab, Alt+F4 and Ctrl+Esc belong to Windows or the console and were not tried.
+
 ### The Linux console (TTY)
 
 The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information. On a French keymap Alt+é and
