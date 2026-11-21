@@ -10,6 +10,7 @@
 
 #include "../../include/vaporui.h"
 #include "../winkeys.h"
+#include "../input.h"
 #include "../ctx.h"
 #define VTOUT_NO_PASTE
 #define VUI_OUT_BUFFER 16384 // one console write per few frames beats a write per cell
@@ -29,6 +30,15 @@ static HANDLE con_in = INVALID_HANDLE_VALUE, con_out = INVALID_HANDLE_VALUE;
 static DWORD saved_in_mode, saved_out_mode;
 static UINT saved_cp;
 static int saved_stdout_fd = -1; // the program's real stdout while the UI draws on the console
+// The active keyboard layout of the foreground window (0x040C is French France; other French layouts differ)
+static const char *detect_layout(void)
+{
+    DWORD thread = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+    unsigned int lang = (unsigned int)(UINT_PTR)GetKeyboardLayout(thread) & 0xFFFFu;
+
+    return lang == 0x040C ? "fr" : lang == 0x0409 ? "us" : NULL;
+}
+
 static int mouse_level;
 static unsigned int prev_buttons;
 static WCHAR high_surrogate;
@@ -76,6 +86,7 @@ int vui_platform_init(void)
         return -1;
     }
 
+    vui_layout_hook = detect_layout;
     mouse_level = 0;
     prev_buttons = 0;
     high_surrogate = 0;

@@ -264,6 +264,60 @@ static VuiEvent vt_feed(unsigned char byte)
     return vui_input_feed(&input_decoder, byte);
 }
 
+#ifdef __linux__
+// The keyboard layout, for terminals that can't say which key was pressed (the Linux console in raw mode doesn't
+// need it). First hit wins; a desktop session asks the desktop, a console reads the system files.
+// shortcut: reads settings once at start; a layout switched while the app runs is not noticed; KDE on Wayland is not asked.
+static char layout_name[32];
+
+static int first_match(const char *cmd, const char *prefix, char open, char close)
+{
+    char line[256];
+    FILE *f = popen(cmd, "r");
+    int found = 0;
+
+    if (f == NULL) return 0;
+    while (!found && fgets(line, sizeof(line), f) != NULL) {
+        char *at = strstr(line, prefix), *end;
+
+        if (at == NULL) continue;
+        at += strlen(prefix);
+        if (open != 0 && (at = strchr(at, open)) == NULL) continue;
+        at += open != 0;
+        while (*at == ' ' || *at == '\t' || *at == '"') at++;
+        end = at + strcspn(at, close ? (char[]){ close, '\n', '"', ' ', '\0' } : "\n\" ");
+        if (end > at && (size_t)(end - at) < sizeof(layout_name)) {
+            memcpy(layout_name, at, (size_t)(end - at));
+            layout_name[end - at] = '\0';
+            found = 1;
+        }
+    }
+    pclose(f);
+    return found;
+}
+
+static const char *detect_layout(void)
+{
+    const char *env = getenv("XKB_DEFAULT_LAYOUT");
+    int desktop = getenv("DISPLAY") != NULL || getenv("WAYLAND_DISPLAY") != NULL;
+
+    if (env != NULL && *env != '\0') return env;
+
+    if (desktop && (first_match("gsettings get org.gnome.desktop.input-sources sources 2>/dev/null", "'xkb'", '\'', '\'')
+                    || first_match("setxkbmap -query 2>/dev/null", "layout:", 0, 0))) {
+        return layout_name;
+    }
+
+    if (first_match("cat /etc/vconsole.conf 2>/dev/null", "KEYMAP=", 0, 0)
+        || first_match("cat /etc/default/keyboard 2>/dev/null", "XKBLAYOUT=", 0, 0)
+        || first_match("cat /etc/X11/xorg.conf.d/00-keyboard.conf 2>/dev/null", "\"XkbLayout\"", '"', '"')) {
+        return layout_name;
+    }
+
+    return NULL;
+}
+#endif
+
 int vui_platform_init(void)
 {
     struct termios raw;
@@ -321,6 +375,9 @@ int vui_platform_init(void)
         return -1;
     }
 
+#ifdef __linux__
+    vui_layout_hook = detect_layout;
+#endif
     vui_input_reset(&input_decoder);
     rx_len = rx_pos = 0;
     vui_clipboard_hook = vtout_osc52_copy;

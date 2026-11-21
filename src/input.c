@@ -209,14 +209,35 @@ static const LayoutKey fr_keys[] = {
 static const LayoutKey *layout = us_keys;
 static int layout_chosen;
 
+const char *(*vui_layout_hook)(void);
+
+// "fr", "fr-latin9", "fr(oss)", "fr+oss", "us,fr" -> the table; NULL for a layout we have no table for ("fr_CH", "de")
+static const LayoutKey *layout_named(const char *name)
+{
+    char token[8];
+    size_t n = strcspn(name, "(+,:-");
+
+    if (n == 0 || n >= sizeof(token)) return NULL;
+    memcpy(token, name, n);
+    token[n] = '\0';
+
+    if (!strcmp(token, "us")) return us_keys;
+    if (!strcmp(token, "fr")) return fr_keys;
+    return NULL;
+}
+
 int vui_set_layout(const char *name)
 {
+    const LayoutKey *found;
+    int detected = 0;
+
     if (name == NULL || *name == '\0') name = getenv("VUI_LAYOUT");
+    if ((name == NULL || *name == '\0') && vui_layout_hook != NULL) name = vui_layout_hook(), detected = 1;
 
-    if (name == NULL || *name == '\0' || !strcmp(name, "us")) layout = us_keys;
-    else if (!strcmp(name, "fr")) layout = fr_keys;
-    else return -1;
+    if (name == NULL || *name == '\0') found = us_keys;
+    else if ((found = layout_named(name)) == NULL && !detected) return -1;
 
+    layout = found != NULL ? found : us_keys;
     layout_chosen = 1;
     return 0;
 }
