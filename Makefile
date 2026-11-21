@@ -69,6 +69,8 @@ test: build $(VTERM_OBJS)
 	build/winkeys-test
 	$(CC) $(CFLAGS) -Isrc tests/vtraw.c src/vtraw.c src/scancode.c -o build/vtraw-test
 	build/vtraw-test
+	$(CC) $(CFLAGS) -Isrc tests/gpm.c src/gpm.c -o build/gpm-test
+	build/gpm-test
 	$(CC) $(CFLAGS) -Isrc tests/termsel.c src/ext/termsel.c -o build/termsel-test
 	build/termsel-test
 	$(CC) $(CFLAGS) tests/widgets.c tests/platform_stub.c $(SRCS) -o build/widgets-test

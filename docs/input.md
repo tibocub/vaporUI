@@ -117,6 +117,15 @@ Consequences and safety:
   recovers Alt+é, Ctrl+& and Ctrl+Shift+letter, but not Ctrl+é). It is also used when raw mode cannot be set up (no
   permission, no keymap we understand). Over ssh or in a terminal emulator there is no VT: the terminal tiers apply.
 
+#### Mouse on the console (gpm)
+
+The console has no mouse protocol; the `gpm` daemon owns the mouse and draws its own pointer and text selection. While an
+app has the mouse on (`vui_set_mouse`), the POSIX backend connects to `/dev/gpmctl` (`src/gpm.c`, pure structs; no
+libgpm needed), takes the events and sets the console's selection pointer under the cursor. Closing the socket (mouse off,
+exit) gives the mouse back to gpm, so plain text selection works again outside the app. Without the daemon running
+(`systemctl start gpm`) there is no mouse on a console. Shortcuts: the wheel's sign convention was read from gpm's
+headers, not tested on hardware; the pointer disappears if the text mode changes.
+
 ### Terminal shortcuts
 
 vaporUI runs on the alternate screen (like vim, less, htop), so terminals that bind Shift+PageUp/Down,

@@ -13,6 +13,8 @@
 #include <linux/kd.h>
 #include <linux/tiocl.h>
 #include <linux/vt.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #endif
 
@@ -20,6 +22,7 @@
 #include "../input.h"
 #include "../keys.h"
 #include "../vtraw.h"
+#include "../gpm.h"
 #include "../ctx.h"
 #include "vtout.h"
 
@@ -108,6 +111,7 @@ static void release_tty(void) {}
 // (3) Ctrl+Alt+F<n> switches console like the kernel did. VUI_RAW_KEYS=0 turns it all off.
 // shortcut: no LED updates for CapsLock/NumLock, no compose key, no AltGr+dead-key sequences beyond the accent table.
 static VuiVtRaw *vtraw;
+static int on_vt; // stdin is a real Linux console
 static long vt_saved_mode;
 static int guard_pipe = -1;
 static pid_t guard_pid;
@@ -176,6 +180,7 @@ static void vt_raw_start(struct termios *raw_termios)
     static const int fatal[] = { SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL };
 
     if (ioctl(tty_fd, KDGKBTYPE, &kbtype) != 0) return; // not a real console: pty, ssh, serial line
+    on_vt = 1;
 
     if (off != NULL && off[0] == '0') { // asked for the old way: Alt+é etc. recovered with the Shift probe
         vui_input_set_shift_probe(vt_shift);
@@ -318,6 +323,89 @@ static const char *detect_layout(void)
 }
 #endif
 
+#ifdef __linux__
+// Mouse on the Linux console: the gpm daemon, if it runs, owns the mouse (it draws a pointer and selects text on the
+// console itself). While an app wants the mouse we connect to /dev/gpmctl and take the events (src/gpm.c), which
+// switches the daemon's own selection off for us; closing the socket gives it back. No daemon, no mouse.
+// shortcut: the pointer is the console's selection pointer (TIOCL_SETSEL mode 3) set after each event; a program
+// that keeps the mouse for long on a console with a different text mode may see it vanish.
+static int gpm_fd = -1, gpm_level;
+static unsigned char gpm_buf[VUI_GPM_EVENT_SIZE];
+static unsigned int gpm_have;
+
+static void gpm_close(void)
+{
+    if (gpm_fd >= 0) {
+        char clear = TIOCL_SELCLEAR;
+
+        ioctl(tty_fd, TIOCLINUX, &clear); // takes the pointer away
+        close(gpm_fd);
+        gpm_fd = -1;
+    }
+    gpm_have = 0;
+}
+
+static void gpm_open(void)
+{
+    struct sockaddr_un addr = { .sun_family = AF_UNIX };
+    unsigned char hello[VUI_GPM_HELLO_SIZE];
+    const char *name = ttyname(tty_fd);
+    int vc = 0;
+
+    if (gpm_fd >= 0 || !on_vt) return;
+    if (name != NULL) {
+        const char *digits = name + strlen(name);
+
+        while (digits > name && digits[-1] >= '0' && digits[-1] <= '9') digits--;
+        vc = atoi(digits);
+    }
+    if (vc <= 0) return;
+
+    gpm_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (gpm_fd < 0) return;
+
+    strcpy(addr.sun_path, "/dev/gpmctl");
+    vui_gpm_hello(hello, (int)getpid(), vc);
+    if (connect(gpm_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 || write(gpm_fd, hello, sizeof(hello)) != (ssize_t)sizeof(hello)) {
+        close(gpm_fd);
+        gpm_fd = -1;
+        return;
+    }
+    fcntl(gpm_fd, F_SETFD, FD_CLOEXEC);
+}
+
+static void gpm_pointer(unsigned int x, unsigned int y)
+{
+    struct { char subcode; struct tiocl_selection sel; } __attribute__((packed)) arg;
+
+    arg.subcode = TIOCL_SETSEL;
+    arg.sel.xs = arg.sel.xe = (unsigned short)(x + 1);
+    arg.sel.ys = arg.sel.ye = (unsigned short)(y + 1);
+    arg.sel.sel_mode = TIOCL_SELPOINTER;
+    ioctl(tty_fd, TIOCLINUX, &arg);
+}
+
+// One event from the daemon, or NONE
+static VuiEvent gpm_read(void)
+{
+    VuiEvent event = { .type = VUI_EVENT_NONE };
+    ssize_t n = read(gpm_fd, gpm_buf + gpm_have, sizeof(gpm_buf) - gpm_have);
+
+    if (n <= 0) { // the daemon went away
+        if (n == 0 || (errno != EINTR && errno != EAGAIN)) gpm_close();
+        return event;
+    }
+
+    gpm_have += (unsigned int)n;
+    if (gpm_have < sizeof(gpm_buf)) return event;
+    gpm_have = 0;
+
+    if (vui_gpm_event(gpm_buf, gpm_level, &event)) gpm_pointer(event.mouse.x, event.mouse.y);
+    else event.type = VUI_EVENT_NONE;
+    return event;
+}
+#endif
+
 int vui_platform_init(void)
 {
     struct termios raw;
@@ -383,6 +471,7 @@ int vui_platform_init(void)
     vui_clipboard_hook = vtout_osc52_copy;
     vtout_start();
 #ifdef __linux__
+    on_vt = 0;
     vt_raw_start(&raw);
     if (vtraw == NULL)
 #endif
@@ -401,6 +490,7 @@ int vui_platform_init(void)
 void vui_platform_shutdown(void)
 {
 #ifdef __linux__
+    gpm_close();
     vt_raw_stop();
     if (key_mode != VUI_KEYS_LEGACY)
 #endif
@@ -420,6 +510,11 @@ void vui_platform_shutdown(void)
 void vui_platform_set_mouse(int level)
 {
     vtout_set_mouse(level);
+#ifdef __linux__
+    gpm_level = level;
+    if (level > 0) gpm_open();
+    else gpm_close();
+#endif
 }
 
 // Serial consoles (NuttX, a bare UART) have no window size: park the cursor in the far corner and
@@ -497,7 +592,8 @@ int vui_platform_input_pending(void)
 VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n, unsigned char *ready)
 {
     ssize_t result;
-    struct pollfd pfd[1 + VUI_MAX_WATCH];
+    struct pollfd pfd[2 + VUI_MAX_WATCH];
+    int has_gpm = 0;
     int esc = vui_input_pending_escape(&input_decoder), esc_first;
 
     VuiEvent event = {
@@ -537,6 +633,14 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         pfd[1 + i].events = POLLIN;
     }
 
+#ifdef __linux__
+    if (gpm_fd >= 0) {
+        pfd[1 + n].fd = gpm_fd;
+        pfd[1 + n].events = POLLIN;
+        has_gpm = 1;
+    }
+#endif
+
     esc_first = esc && (timeout_ms < 0 || VUI_ESCAPE_TIMEOUT_MS <= timeout_ms);
 
     if (esc_first) {
@@ -544,7 +648,7 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
     }
 
     // Handles resize when poll is blocked
-    result = poll(pfd, 1 + n, timeout_ms);
+    result = poll(pfd, 1 + n + has_gpm, timeout_ms);
 
     if (result == -1) {
         if (errno == EINTR && resize_pending) {
@@ -564,6 +668,14 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
     for (unsigned int i = 0; i < n; i++) {
         ready[i] = (pfd[1 + i].revents & (POLLIN | POLLHUP | POLLERR)) != 0;
     }
+
+#ifdef __linux__
+    if (has_gpm && (pfd[1 + n].revents & (POLLIN | POLLHUP | POLLERR))) {
+        VuiEvent mouse = gpm_read();
+
+        if (mouse.type != VUI_EVENT_NONE) return mouse;
+    }
+#endif
 
     if (pfd[0].revents & (POLLHUP | POLLERR | POLLNVAL) && !(pfd[0].revents & POLLIN)) {
         event.type = VUI_EVENT_CLOSE;
