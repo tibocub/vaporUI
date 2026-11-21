@@ -41,16 +41,14 @@ static inline void vtout_start(void)
     vui_set_color_depth(ct != NULL && (strstr(ct, "truecolor") || strstr(ct, "24bit")) ? 24
         : term != NULL && strstr(term, "256") ? 8 : 4);
 
-    // kitty keyboard protocol ('disambiguate') and xterm modifyOtherKeys
-    // level 1: let terminals that support either report Ctrl/Alt/Shift on
-    // any key. Others ignore them.
-    fputs("\033[?1049h\033[?25l\033[>5u\033[>4;1m\033[?2004h", stdout); // kitty keyboard flags 1+4 (disambiguate, alternate keys); alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), + xterm modifyOtherKeys 1, bracketed paste
+    // extended key reporting is negotiated by the POSIX backend (keys_start), the Windows console needs none
+    fputs("\033[?1049h\033[?25l\033[?2004h", stdout); // alternate screen (no scrollback pollution, terminals leave their scroll keys to the app), hide the cursor (widgets draw their own), bracketed paste
     fflush(stdout);
 }
 
 static inline void vtout_stop(void)
 {
-    fputs("\033[?25h\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[>4;0m\033[<u\033[?1049l", stdout);
+    fputs("\033[?25h\033[?1006l\033[?1003l\033[?1002l\033[?1000l\033[?2004l\033[?1049l", stdout);
     fflush(stdout);
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 }

@@ -26,6 +26,53 @@ static VuiInputDecoder input_decoder;
 static unsigned char rx[64];
 static unsigned int rx_len, rx_pos;
 
+// Extended keys (Ctrl/Alt on any key, which physical key), negotiated like neovim does: ask for the kitty keyboard
+// protocol's flags (CSI ? u) followed by a Primary Device Attributes request (CSI c) that every terminal answers,
+// so a missing kitty reply is known when DA1 arrives. Kitty if it answered, else xterm modifyOtherKeys level 2
+// (all modified keys, accented letters too), never both. Undone at exit.
+// shortcut: a terminal that answers neither costs 100 ms at start, and keys typed in that time are lost.
+static enum { KEYS_LEGACY, KEYS_KITTY, KEYS_XTERM } key_mode;
+
+static void keys_start(void)
+{
+    char buf[96];
+    unsigned int n = 0;
+    struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
+
+    fputs("\033[?u\033[c", stdout);
+    fflush(stdout);
+
+    while (n < sizeof(buf) - 1 && poll(&pfd, 1, 100) > 0 && read(tty_fd, buf + n, 1) == 1) {
+        if (buf[n++] == 'c') break; // end of the DA1 reply
+    }
+
+    buf[n] = '\0';
+
+    key_mode = KEYS_XTERM;
+
+    if (n == 0 || buf[n - 1] != 'c') {
+        key_mode = KEYS_LEGACY; // no answer at all: not a terminal that understands queries
+    }
+
+    // the kitty reply is ESC [ ? <flags> u, the DA1 reply ESC [ ? ... c
+    for (const char *r = buf; key_mode == KEYS_XTERM && (r = strstr(r, "\033[?")) != NULL; r += 3) {
+        const char *d = r + 3;
+
+        while (*d >= '0' && *d <= '9') d++;
+        if (*d == 'u') key_mode = KEYS_KITTY;
+    }
+
+    // kitty flags 1+4: disambiguate escape codes, report alternate keys
+    fputs(key_mode == KEYS_KITTY ? "\033[>5u" : key_mode == KEYS_XTERM ? "\033[>4;2m" : "", stdout);
+    fflush(stdout);
+}
+
+static void keys_stop(void)
+{
+    fputs(key_mode == KEYS_KITTY ? "\033[<u" : key_mode == KEYS_XTERM ? "\033[>4;0m" : "", stdout);
+    key_mode = KEYS_LEGACY;
+}
+
 static void handle_sigwinch(int signal)
 {
     (void)signal;
@@ -109,12 +156,14 @@ int vui_platform_init(void)
     rx_len = rx_pos = 0;
     vui_clipboard_hook = vtout_osc52_copy;
     vtout_start();
+    keys_start();
 
     return 0; 
 }
 
 void vui_platform_shutdown(void)
 {
+    keys_stop();
     vtout_stop();
 
     tcsetattr(

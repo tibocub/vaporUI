@@ -26,13 +26,15 @@ A terminal only reports what it encodes. Three tiers, all handled in `src/vt.c` 
 1. **Legacy (every terminal):** letters + Ctrl (as C0 bytes), Alt as an `ESC` prefix, arrows/Home/End/
    PgUp/PgDn/Insert/Delete/F1-F12, Ctrl/Shift/Alt on those via `CSI 1;<mod> X`, Shift-Tab.
    *Not representable:* Ctrl+digit, Ctrl+most symbols, Ctrl+accented letters, Shift+Enter...
-2. **xterm modifyOtherKeys** (`CSI 27;<mod>;<code> ~`), enabled at level 1 on init: terminals that
-   support it report Ctrl+symbol / Ctrl+accented keys.
+2. **xterm modifyOtherKeys** (`CSI 27;<mod>;<code> ~`), enabled at level 2 (every modified key) when the terminal
+   doesn't speak kitty: Ctrl+symbol / Ctrl+accented keys, Alt on any key.
 3. **kitty keyboard protocol** (`CSI <code>[:<shifted>[:<base>]];<mod> u`), enabled at the "disambiguate" + "alternate keys"
    levels on init: any key with any modifiers, and which physical key it was.
 
-Both modern modes are requested at init and undone at shutdown; terminals that don't know them ignore
-the request, and then those combos simply never arrive. Test with `examples/input-handling`: if a
+At init vaporUI asks the terminal `CSI ? u` + `CSI c` (like neovim): a kitty reply selects the kitty protocol,
+any other answer selects modifyOtherKeys 2, never both; a silent terminal stays legacy (100 ms wait). The mode is
+undone at shutdown. In a terminal that knows neither, those combos simply never arrive.
+`python3 tests/keydump.py [kitty|mok2]` prints the raw bytes a terminal sends per key, to see what it really says. Test with `examples/input-handling`: if a
 combo doesn't show there, your terminal isn't sending it, not vaporUI failing to decode it.
 
 ### Non-QWERTY layouts (AZERTY etc.)
