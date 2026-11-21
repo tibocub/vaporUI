@@ -9,9 +9,14 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#ifdef __linux__
+#include <linux/kd.h>
+#include <linux/tiocl.h>
+#endif
 
 #include "../../include/vaporui.h"
 #include "../input.h"
+#include "../keys.h"
 #include "../ctx.h"
 #include "vtout.h"
 
@@ -26,52 +31,46 @@ static VuiInputDecoder input_decoder;
 static unsigned char rx[64];
 static unsigned int rx_len, rx_pos;
 
-// Extended keys (Ctrl/Alt on any key, which physical key), negotiated like neovim does: ask for the kitty keyboard
-// protocol's flags (CSI ? u) followed by a Primary Device Attributes request (CSI c) that every terminal answers,
-// so a missing kitty reply is known when DA1 arrives. Kitty if it answered, else xterm modifyOtherKeys level 2
-// (all modified keys, accented letters too), never both. Undone at exit.
-// shortcut: a terminal that answers neither costs 100 ms at start, and keys typed in that time are lost.
-static enum { KEYS_LEGACY, KEYS_KITTY, KEYS_XTERM } key_mode;
+// Extended keys: the strings and the decision are in keys.c; this reads the terminal's reply.
+// shortcut: a terminal that answers nothing costs 100 ms at start, and keys typed in that time are lost.
+static VuiKeyMode key_mode;
 
 static void keys_start(void)
 {
     char buf[96];
-    unsigned int n = 0;
+    size_t n = 0;
     struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
 
-    fputs("\033[?u\033[c", stdout);
+    fputs(VUI_KEYS_QUERY, stdout);
     fflush(stdout);
 
-    while (n < sizeof(buf) - 1 && poll(&pfd, 1, 100) > 0 && read(tty_fd, buf + n, 1) == 1) {
-        if (buf[n++] == 'c') break; // end of the DA1 reply
+    while (n < sizeof(buf) && poll(&pfd, 1, 100) > 0 && read(tty_fd, buf + n, 1) == 1) {
+        n++;
+        if (vui_keys_reply_complete(buf, n)) break;
     }
 
-    buf[n] = '\0';
-
-    key_mode = KEYS_XTERM;
-
-    if (n == 0 || buf[n - 1] != 'c') {
-        key_mode = KEYS_LEGACY; // no answer at all: not a terminal that understands queries
-    }
-
-    // the kitty reply is ESC [ ? <flags> u, the DA1 reply ESC [ ? ... c
-    for (const char *r = buf; key_mode == KEYS_XTERM && (r = strstr(r, "\033[?")) != NULL; r += 3) {
-        const char *d = r + 3;
-
-        while (*d >= '0' && *d <= '9') d++;
-        if (*d == 'u') key_mode = KEYS_KITTY;
-    }
-
-    // kitty flags 1+4: disambiguate escape codes, report alternate keys
-    fputs(key_mode == KEYS_KITTY ? "\033[>5u" : key_mode == KEYS_XTERM ? "\033[>4;2m" : "", stdout);
+    key_mode = vui_keys_mode(buf, n);
+    fputs(vui_keys_enable(key_mode), stdout);
     fflush(stdout);
 }
 
 static void keys_stop(void)
 {
-    fputs(key_mode == KEYS_KITTY ? "\033[<u" : key_mode == KEYS_XTERM ? "\033[>4;0m" : "", stdout);
-    key_mode = KEYS_LEGACY;
+    fputs(vui_keys_disable(key_mode), stdout);
+    key_mode = VUI_KEYS_LEGACY;
 }
+
+#ifdef __linux__
+// The Linux console sends Alt+e-acute and Alt+Shift+e-acute as the same ESC 2 (the keymap says Meta_two for both), so
+// ask the console whether Shift is down right now (what the `shiftstate` utility does). bit 0 = Shift.
+// shortcut: Shift released before we ask (a few microseconds after the key arrived) reads as not held.
+static int vt_shift(void)
+{
+    char state = TIOCL_GETSHIFTSTATE;
+
+    return ioctl(tty_fd, TIOCLINUX, &state) < 0 ? -1 : (state & 1);
+}
+#endif
 
 static void handle_sigwinch(int signal)
 {
@@ -157,6 +156,13 @@ int vui_platform_init(void)
     vui_clipboard_hook = vtout_osc52_copy;
     vtout_start();
     keys_start();
+#ifdef __linux__
+    {
+        char kbtype; // only a real VT answers this (not a pty, ssh, or a serial line)
+
+        vui_input_set_shift_probe(ioctl(tty_fd, KDGKBTYPE, &kbtype) == 0 ? vt_shift : NULL);
+    }
+#endif
 
     return 0; 
 }
@@ -164,6 +170,7 @@ int vui_platform_init(void)
 void vui_platform_shutdown(void)
 {
     keys_stop();
+    vui_input_set_shift_probe(NULL);
     vtout_stop();
 
     tcsetattr(

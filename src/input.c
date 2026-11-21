@@ -3,8 +3,16 @@
 
 #include "input.h"
 
+static VuiShiftProbe shift_probe;
+
+void vui_input_set_shift_probe(VuiShiftProbe probe)
+{
+    shift_probe = probe;
+}
+
 void vui_input_reset(VuiInputDecoder *decoder)
 {
+    decoder->shift_state = -1;
     decoder->in_escape = 0;
     decoder->alt = 0;
     decoder->in_paste = 0;
@@ -99,6 +107,7 @@ static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
         if (decoder->vt.state == VUI_VT_STATE_INTRO && byte != '[' && byte != 'O') {
             decoder->in_escape = 0;
             decoder->alt = 1;
+            decoder->shift_state = shift_probe != NULL ? shift_probe() : -1;
         } else {
             VuiEvent parsed;
 
@@ -220,6 +229,11 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
             k->modifiers |= VUI_MOD_SHIFT;
         }
 
+        if (decoder->shift_state >= 0) {
+            // the console told us whether Shift is down: that is the truth, not what the typed character implies
+            k->modifiers = (VuiModifiers)((k->modifiers & ~VUI_MOD_SHIFT) | (decoder->shift_state ? VUI_MOD_SHIFT : 0));
+        }
+
         if (k->base == 0) {
             if (!layout_chosen) vui_set_layout(NULL);
 
@@ -227,12 +241,14 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
             for (const LayoutKey *l = layout; l->typed != 0; l++) {
                 if (l->typed == k->character) {
                     k->base = l->base;
-                    if (l->shift) k->modifiers |= VUI_MOD_SHIFT;
+                    if (l->shift && decoder->shift_state < 0) k->modifiers |= VUI_MOD_SHIFT;
                     break;
                 }
             }
         }
     }
+
+    if (e.type != VUI_EVENT_NONE) decoder->shift_state = -1; // consumed by this event, whatever it was
 
     return e;
 }

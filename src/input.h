@@ -11,11 +11,18 @@ typedef struct {
     int in_escape;
     int in_paste; // between PASTE_START and PASTE_END
     int alt; // ESC prefixed the char being decoded
+    int shift_state; // Shift held when that ESC-prefixed char arrived (from the shift probe): 0, 1, or -1 unknown
     VuiVtDecoder vt;
     VuiUtf8Decoder utf8;
 } VuiInputDecoder;
 
 void vui_input_reset(VuiInputDecoder *decoder);
+
+// Some consoles send Alt+key as ESC <char> whether or not Shift is held (the Linux console, French keymap: Alt+e-acute
+// and Alt+Shift+e-acute are both ESC 2). A backend that can ask the console whether Shift is down right now installs
+// a probe (returns 1, 0, or -1 if it cannot tell); it is consulted for ESC-prefixed characters only.
+typedef int (*VuiShiftProbe)(void);
+void vui_input_set_shift_probe(VuiShiftProbe probe);
 
 // Feed one raw byte from the terminal. Returns VUI_EVENT_NONE when the
 // byte was consumed but didn't complete anything yet (mid UTF-8

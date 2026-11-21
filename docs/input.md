@@ -60,6 +60,15 @@ Where `base` comes from:
 `Ctrl+é` and friends have no legacy encoding: they only arrive if the terminal speaks modifyOtherKeys or the kitty
 protocol (tier 2-3 above). When they arrive, `base` works for them like for any key.
 
+### The Linux console (TTY)
+
+The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information: on a French keymap Alt+é
+and Alt+Shift+é are both `ESC 2`, and Ctrl+é is `0x1e` (Ctrl+^), the same as a real Ctrl+^. vaporUI recovers the
+first one: when stdin is a real VT, an `ESC <char>` is followed by a `TIOCL_GETSHIFTSTATE` ioctl that says whether Shift
+is down (`vui_input_set_shift_probe`, installed by the POSIX backend), and that replaces the Shift the typed
+character would imply. So Alt+é is `'2'` + ALT and Alt+Shift+é is `'2'` + ALT|SHIFT, base `'2'` for both. Over ssh or in
+a terminal emulator there is no VT to ask. Alt+F1..F6 switch virtual terminals in the kernel and never reach the app.
+
 ### Terminal shortcuts
 
 vaporUI runs on the alternate screen (like vim, less, htop), so terminals that bind Shift+PageUp/Down,
