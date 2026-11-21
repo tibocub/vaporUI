@@ -5,6 +5,7 @@
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE
 #endif
+#include <ctype.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@
 
 #include "../../include/vaporui.h"
 #include "../../third_party/libvterm/include/vterm.h"
+#include "../ctx.h"
 #include "../utf8.h"
 #include "termsel.h"
 
@@ -32,6 +34,7 @@
 // shortcut: they don't reflow themselves (only the visible rows do). VUI_TERMINAL_SCROLLBACK (vaporui.h) = 0 builds none of it.
 typedef struct {
     int cols;
+    int cont; // this line continues the previous one (a soft wrap)
     VTermScreenCell cells[];
 } Line;
 
@@ -43,13 +46,14 @@ static Line **sb_slot(const VuiTerminal *t, unsigned int i)
     return &((Line **)t->sb)[(t->sb_head + i) % SBN];
 }
 
-static int sb_push(int cols, const VTermScreenCell *cells, void *user)
+static int sb_push(int cols, const VTermScreenCell *cells, bool cont, void *user)
 {
     VuiTerminal *t = user;
     Line *l = malloc(sizeof(Line) + cols * sizeof(VTermScreenCell));
 
     if (l == NULL) return 0;
     l->cols = cols;
+    l->cont = cont;
     memcpy(l->cells, cells, cols * sizeof(VTermScreenCell));
 
     if (t->sb == NULL && (t->sb = calloc(SBN, sizeof(Line *))) == NULL) { free(l); return 0; }
@@ -160,6 +164,15 @@ static int line_width(const VuiTerminal *t, long idx)
     return t->cols;
 }
 
+// does view line idx continue the one above it (the program's line wrapped)?
+static int is_cont(const VuiTerminal *t, long idx)
+{
+#if VUI_TERMINAL_SCROLLBACK > 0
+    if (idx < (long)t->sb_len) return (*sb_slot(t, idx))->cont;
+#endif
+    return idx - (long)t->sb_len < (long)t->rows && vterm_state_get_lineinfo(vterm_obtain_state(t->vt), idx - t->sb_len)->continuation;
+}
+
 static int blank(const VTermScreenCell *c) { return c->chars[0] == 0 || c->chars[0] == ' '; }
 
 size_t terminal_selection_text(const VuiTerminal *t, char *out, size_t size)
@@ -167,6 +180,7 @@ size_t terminal_selection_text(const VuiTerminal *t, char *out, size_t size)
     TsPos a = { t->sel_line[0], t->sel_col[0] }, b = { t->sel_line[1], t->sel_col[1] };
     size_t n = 0;
     long lo, hi;
+    int pending = 0;
 
     if (!t->sel_on) {
         if (size > 0) out[0] = 0;
@@ -179,9 +193,10 @@ size_t terminal_selection_text(const VuiTerminal *t, char *out, size_t size)
     if (lo < 0) lo = 0; // dropped off the scrollback since
 
     for (long idx = lo; idx <= hi && idx < (long)t->sb_len + (long)t->rows; idx++) {
-        int c0, c1, pending = 0;
+        int c0, c1;
 
-        if (idx > lo) { if (n + 1 < size) out[n] = '\n'; n++; }
+        // a soft-wrapped row is full: its trailing blanks are real, and no newline joins it to the next
+        if (idx > lo && !is_cont(t, idx)) { pending = 0; if (n + 1 < size) out[n] = '\n'; n++; }
         if (!ts_span(a, b, idx + t->sb_base, line_width(t, idx), &c0, &c1)) continue;
 
         for (int x = c0; x < c1; x++) {
@@ -289,6 +304,58 @@ static void term_draw(VuiNode *node, VuiScreen *scr, void *userdata)
     }
 }
 
+static int wordch(const VuiTerminal *t, long idx, int x)
+{
+    VTermScreenCell c;
+
+    if (!cell_at(t, idx, x, &c) || blank(&c)) return 0;
+    return c.chars[0] > 127 || isalnum((int)c.chars[0]) || strchr("_-./~@%+=#", (int)c.chars[0]) != NULL; // also the right half of a wide char (-1)
+}
+
+// double click: the word under the cell; triple: the program's line, wrapped rows included
+static void select_unit(VuiTerminal *t, int clicks, int y, int x)
+{
+    long idx = (long)t->sb_len - (long)t->scroll + y, last;
+    int l = x, r = x;
+
+    if (clicks == 2) {
+        if (wordch(t, idx, x)) {
+            while (l > 0 && wordch(t, idx, l - 1)) l--;
+            while (r + 1 < line_width(t, idx) && wordch(t, idx, r + 1)) r++;
+        }
+
+        t->sel_line[0] = t->sel_line[1] = idx + t->sb_base;
+        t->sel_col[0] = l;
+        t->sel_col[1] = r;
+    } else {
+        last = idx;
+        while (idx > 0 && is_cont(t, idx)) idx--;
+        while (last + 1 < (long)t->sb_len + (long)t->rows && is_cont(t, last + 1)) last++;
+        t->sel_line[0] = idx + t->sb_base;
+        t->sel_col[0] = 0;
+        t->sel_line[1] = last + t->sb_base;
+        t->sel_col[1] = line_width(t, last) - 1;
+    }
+
+    t->sel_on = 1;
+}
+
+// while the button is held outside the node, scroll steadily instead of once per mouse event
+static void drag_tick(VuiCtx *ui, void *user)
+{
+    VuiTerminal *t = user;
+
+    if (!t->selecting || t->drag_dir == 0) {
+        vui_timer_cancel(ui, t->drag_timer);
+        t->drag_timer = 0;
+        return;
+    }
+
+    terminal_scroll(t, t->drag_dir);
+    t->sel_line[1] = ts_row_id(t->sb_base, t->sb_len, t->scroll, t->drag_dir > 0 ? 0 : (int)t->rows - 1);
+    t->sel_col[1] = t->drag_x;
+}
+
 // Mouse: to the program when it asked for it, else select (left drag) and scroll (wheel). A gesture that started
 // one way finishes that way, whatever Shift does meanwhile.
 static int term_mouse(VuiTerminal *t, const VuiMouseEvent *m)
@@ -323,24 +390,32 @@ static int term_mouse(VuiTerminal *t, const VuiMouseEvent *m)
     if (m->button != VUI_MOUSE_LEFT) return 0;
 
     if (m->action == VUI_MOUSE_RELEASE) {
-        t->selecting = 0;
+        t->selecting = t->drag_dir = 0;
         return 1;
     }
 
     if (m->action == VUI_MOUSE_MOVE) {
-        // dragging past the top or bottom edge scrolls one line per event; shortcut: only while the mouse keeps moving
-        if (t->selecting && ry < 0) terminal_scroll(t, 1);
-        else if (t->selecting && ry >= (long)t->rows) terminal_scroll(t, -1);
+        t->drag_dir = !t->selecting ? 0 : ry < 0 ? 1 : ry >= (long)t->rows ? -1 : 0;
+        t->drag_x = x;
+
+        if (t->drag_dir != 0 && t->drag_timer == 0) t->drag_timer = vui_timer(vui_ctx(), 60, 1, drag_tick, t);
     }
 
     t->sel_line[1] = ts_row_id(t->sb_base, t->sb_len, t->scroll, y);
     t->sel_col[1] = x;
 
     if (m->action == VUI_MOUSE_PRESS) {
+        uint64_t now = vui_platform_now_ms();
+
+        t->clicks = now - t->click_ms < 400 && x == t->click_x && y == t->click_y ? t->clicks % 3 + 1 : 1;
+        t->click_ms = now;
+        t->click_x = x;
+        t->click_y = y;
         t->selecting = 1;
         t->sel_on = 0;
         t->sel_line[0] = t->sel_line[1];
         t->sel_col[0] = x;
+        if (t->clicks > 1) select_unit(t, t->clicks, y, x);
     } else if (t->selecting) {
         t->sel_on = 1;
     }
@@ -476,7 +551,7 @@ static int set_prop(VTermProp prop, VTermValue *val, void *user)
     return 1;
 }
 
-static const VTermScreenCallbacks screen_cb = { .settermprop = set_prop, .sb_pushline = sb_push, .sb_popline = sb_pop, .sb_clear = sb_clear };
+static const VTermScreenCallbacks screen_cb = { .settermprop = set_prop, .sb_pushline4 = sb_push, .sb_popline = sb_pop, .sb_clear = sb_clear };
 
 static void child_gone(VuiTerminal *t)
 {
@@ -523,6 +598,7 @@ static void term_destroy(VuiNode *node)
 #endif
     }
 
+    if (t->drag_timer != 0) vui_timer_cancel(vui_ctx(), t->drag_timer);
     vterm_free(t->vt);
     #if VUI_TERMINAL_SCROLLBACK > 0
     sb_clear(t);
@@ -553,6 +629,7 @@ VuiTerminal *terminal_create(const char *const argv[])
     vterm_output_set_callback(t->vt, to_child, t);
     t->screen = vterm_obtain_screen(t->vt);
     vterm_screen_set_callbacks(t->screen, &screen_cb, t);
+    vterm_screen_callbacks_has_pushline4(t->screen);
     vterm_screen_enable_altscreen(t->screen, 1);
     vterm_screen_enable_reflow(t->screen, 1); // a resize re-wraps the rows that are shown
     vterm_screen_reset(t->screen, 1);

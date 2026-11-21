@@ -724,7 +724,8 @@ void textarea_redo(VuiTextarea *ta);
 // While scrolled back the view stays on the same text as output arrives, and "[n]" shows top right.
 //
 // Mouse: when the program asked for mouse reporting (and Shift isn't held) press / release / drag / wheel go to it.
-// Otherwise the left button selects text (screen and scrollback, cell-wise, no double/triple click) and the wheel
+// Otherwise the left button selects text (screen and scrollback, cell-wise; double click = word, triple = the whole
+// program line even if it wrapped) and the wheel
 // scrolls the view. Shift always selects. A selection is copied with terminal_copy() (the in-process clipboard and,
 // through it, the system one via OSC 52).
 #ifndef VUI_TERMINAL_SCROLLBACK
@@ -747,6 +748,8 @@ typedef struct VuiTerminal {
     unsigned int sb_len, sb_head;
     long sb_base; // lines dropped off the oldest end, so line ids stay stable
     int mouse_mode, altscreen, pasting, fwd, selecting, sel_on;
+    uint64_t click_ms; // double / triple click tracking, and the edge-drag scroll timer
+    int clicks, click_x, click_y, drag_dir, drag_x, drag_timer;
     long sel_line[2]; // selection anchor and head: line id, column
     int sel_col[2];
 } VuiTerminal;

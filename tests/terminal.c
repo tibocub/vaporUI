@@ -7,6 +7,7 @@
 #include "../include/vaporui.h"
 
 extern unsigned int stub_ready_mask;
+extern uint64_t stub_now;
 
 static VuiTerminal *t;
 static VuiCtx *ui;
@@ -133,6 +134,35 @@ int main(void)
     terminal_selection_text(t, a, sizeof a);
     for (char *p = a, *q = a;; p++) { if (*p != '\n') *q++ = *p; if (!*p) break; } // rows wrap: join them
     assert(strstr(a, "^[[<0;3;2M^[[<0;3;2m^[") != NULL && strstr(a, "<64;3;2M") != NULL); // cat -v shows the escapes: the program got them (cat echoes after the tty's own echo)
+    node_destroy(&t->node);
+
+    // soft-wrapped rows copy as one line; double click = word, triple click = the whole wrapped line
+    t = terminal_create((const char *const[]){ "sh", "-c", "printf 'alpha beta-gamma delta epsilon zeta eta\\n'; sleep 5", NULL });
+    assert(t != NULL);
+    t->node.rect = (VuiRect){ 0, 0, 20, 10 };
+    node_draw(&t->node, scr);
+    usleep(300000);
+    stub_ready_mask = 1;
+    vui_next_event(ui, &t->node);
+    stub_ready_mask = 0;
+    node_draw(&t->node, scr);
+    first_line(0, 2, a, sizeof a);
+    assert(strstr(a, "alpha beta-gamma delta epsilon zeta eta") != NULL);
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 8, 0, 0);
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_RELEASE, 8, 0, 0);
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 8, 0, 0);
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_RELEASE, 8, 0, 0);
+    terminal_selection_text(t, a, sizeof a);
+    assert(strcmp(a, "beta-gamma") == 0);
+    stub_now += 100;
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 8, 0, 0);
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_RELEASE, 8, 0, 0);
+    terminal_selection_text(t, a, sizeof a);
+    assert(strcmp(a, "alpha beta-gamma delta epsilon zeta eta") == 0);
+    stub_now += 1000; // too slow: a fresh single click selects nothing yet
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_PRESS, 8, 0, 0);
+    mouse(VUI_MOUSE_LEFT, VUI_MOUSE_RELEASE, 8, 0, 0);
+    assert(terminal_selection_text(t, a, sizeof a) == 0);
     node_destroy(&t->node);
     scr_destroy(scr);
     vui_shutdown(ui);
