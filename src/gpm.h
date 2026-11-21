@@ -16,8 +16,14 @@
 // the socket closes. The daemon then draws no pointer: vaporUI draws its own (vui_soft_pointer).
 void vui_gpm_hello(unsigned char out[VUI_GPM_HELLO_SIZE], int pid, int vc);
 
-// One Gpm_Event -> a mouse event. level is vui_set_mouse's (1 clicks and drags, 2 also plain motion). Returns 1 when
-// there is something to report. x, y come 1-based from the daemon and leave 0-based.
-int vui_gpm_event(const unsigned char in[VUI_GPM_EVENT_SIZE], int level, VuiEvent *out);
+// Wheel emulation for pointing devices that have no wheel (a ThinkPad TrackPoint, most touchpads under gpm): while the
+// middle button is held, vertical motion scrolls, one wheel step per `units` of movement (up = wheel up). A middle
+// click that did not scroll is still reported as a click, when the button goes up.
+typedef struct { int units, mid, scrolled, acc; } VuiGpmState;
+void vui_gpm_state_init(VuiGpmState *st, int units); // units 0: no emulation
+
+// One Gpm_Event -> up to two mouse events (out[0], out[1]); returns how many. level is vui_set_mouse's (1 clicks and
+// drags, 2 also plain motion). x, y come 1-based from the daemon and leave 0-based.
+int vui_gpm_event(const unsigned char in[VUI_GPM_EVENT_SIZE], int level, VuiGpmState *st, VuiEvent out[2]);
 
 #endif

@@ -374,6 +374,8 @@ static const char *detect_layout(void)
 // frame draws its own (vui_soft_pointer). shortcut: plain motion events reach the app even at mouse level 1.
 static int gpm_fd = -1, gpm_level;
 static unsigned char gpm_buf[VUI_GPM_EVENT_SIZE];
+static VuiGpmState gpm_state;
+static VuiEvent gpm_pending = { .type = VUI_EVENT_NONE }; // the second event of a middle click
 static unsigned int gpm_have;
 
 static void gpm_close(void)
@@ -413,6 +415,11 @@ static void gpm_open(void)
         return;
     }
     fcntl(gpm_fd, F_SETFD, FD_CLOEXEC);
+    {
+        const char *u = getenv("VUI_GPM_SCROLL"); // movement per wheel step of the middle-button lever; 0 turns it off
+
+        vui_gpm_state_init(&gpm_state, u != NULL ? atoi(u) : 10);
+    }
     vui_soft_pointer = 1; // the daemon draws no pointer for a client that takes every event: the frame draws one
 }
 
@@ -431,8 +438,11 @@ static VuiEvent gpm_read(void)
     if (gpm_have < sizeof(gpm_buf)) return event;
     gpm_have = 0;
 
-    if (!vui_gpm_event(gpm_buf, 2, &event)) event.type = VUI_EVENT_NONE; // always with motion: the pointer follows it
-    return event;
+    VuiEvent two[2];
+
+    if (vui_gpm_event(gpm_buf, 2, &gpm_state, two) == 0) return event; // always with motion: the pointer follows it
+    gpm_pending = two[1].type == VUI_EVENT_MOUSE ? two[1] : (VuiEvent){ .type = VUI_EVENT_NONE };
+    return two[0];
 }
 #endif
 
@@ -664,6 +674,11 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
     }
 
 #ifdef __linux__
+    if (gpm_pending.type != VUI_EVENT_NONE) {
+        event = gpm_pending;
+        gpm_pending.type = VUI_EVENT_NONE;
+        return event;
+    }
     if (gpm_fd >= 0) {
         pfd[1 + n].fd = gpm_fd;
         pfd[1 + n].events = POLLIN;

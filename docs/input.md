@@ -133,7 +133,13 @@ The console has no mouse protocol; the `gpm` daemon owns the mouse and draws its
 app has the mouse on (`vui_set_mouse`), the POSIX backend connects to `/dev/gpmctl` (`src/gpm.c`, pure structs; no
 libgpm needed), takes the events. The daemon then draws no pointer (a client could only draw one as root), so vaporUI draws its own: the cell under the mouse is shown in reverse video (`vui_soft_pointer`, `scr_toggle_reverse`). Plain mouse motion therefore reaches the app even at mouse level 1. Closing the socket (mouse off,
 exit) gives the mouse back to gpm, so plain text selection works again outside the app. Without the daemon running
-(`systemctl start gpm`) there is no mouse on a console. Shortcuts: the wheel's sign convention was read from gpm's
+(`systemctl start gpm`) there is no mouse on a console. **Scrolling.** gpm only passes on what the kernel's `/dev/input/mice` gives it. A real wheel works (the unit runs
+`gpm -t exps2`, which asks for wheel data). A TrackPoint's middle-button scrolling and a touchpad's two-finger scrolling are
+done by userspace (libinput) on a desktop and do not exist here: the touchpad is reduced to a plain mouse. vaporUI therefore
+emulates a wheel from the middle button, like libinput does for the TrackPoint: hold the middle button and push the stick
+up or down, one wheel step per `VUI_GPM_SCROLL` units of movement (default 10; 0 turns it off). A middle click that did not scroll
+is still a click. Two-finger scrolling on the touchpad would need reading `/dev/input/event*` directly, which is not done.
+Shortcuts: the wheel's sign convention was read from gpm's
 headers, not tested on hardware.
 
 ### Terminal shortcuts
