@@ -234,6 +234,16 @@ int vui_set_layout(const char *name)
     return 0;
 }
 
+// What the key at US position `base` types on this layout without Shift
+static uint32_t unshifted_of(uint32_t base)
+{
+    for (const LayoutKey *l = layout; l->typed != 0; l++) {
+        if (l->base == base && !l->shift) return l->typed;
+    }
+
+    return base;
+}
+
 // A letter key is always reported as the lowercase letter plus VUI_MOD_SHIFT, whatever the terminal sent: a legacy
 // terminal says Alt+Shift+q as ESC 'Q' (no Shift), a kitty / modifyOtherKeys one as 'q' or 'Q' with Shift.
 // Then the base key: from the terminal if it said (kitty alternate keys), else from the layout table.
@@ -266,17 +276,9 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
                     break;
                 }
             }
-        }
 
-        // The console sent the shifted character (Alt+e-acute is ESC 2) but says Shift is up: the key types the
-        // unshifted one on this layout
-        if (decoder->shift_state == 0) {
-            for (const LayoutKey *l = layout; l->typed != 0; l++) {
-                if (l->base == k->base && !l->shift) {
-                    k->character = l->typed;
-                    break;
-                }
-            }
+            // like a letter: the key's unshifted character, and Shift is the flag (Alt+Shift+é, not Alt+2)
+            k->character = unshifted_of(k->base);
         }
     }
 

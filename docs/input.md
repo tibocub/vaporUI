@@ -42,8 +42,10 @@ combo doesn't show there, your terminal isn't sending it, not vaporUI failing to
 Characters are decoded as Unicode, so typing é, à, ç, ù, €, 日 works everywhere as `TEXT`. A key combo is a
 `KEY` + `VUI_KEY_CHAR` with two ways to name the key, and you choose per binding:
 
-- `character`: what the key types on the user's layout, lowercase (Shift is the modifier flag, also for accented
-  letters: Alt+Shift+É is `'é'` + ALT|SHIFT). Use it for "the key labelled Q": Alt+q is the key printed Q on every layout.
+- `character`: what the key types on the user's layout *without Shift*, and Shift is the modifier flag, like dwm's
+  `XK_eacute` + `ShiftMask` and the kitty protocol's key code. Alt+Shift+É is `'é'` + ALT|SHIFT; so is Alt+Shift+é
+  on AZERTY, which types a `2` (the terminal may say `ESC 2`; vaporUI turns it back into `'é'` + SHIFT). On US,
+  Ctrl+$ is `'4'` + CTRL|SHIFT. Use it for "the key labelled Q".
 - `base`: where the key sits, as the character of the same position on a US keyboard. The key typing `&` on AZERTY
   has base `'1'`, `é` is `'2'`, and Alt+Shift+that key is base `'1'` with SHIFT whichever way the terminal said it
   (`ESC 1`, since AZERTY types a 1 with Shift, or `ESC &` + a Shift flag). Use it for "the number row", so tag

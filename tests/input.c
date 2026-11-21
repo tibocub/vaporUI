@@ -9,7 +9,7 @@ static VuiEvent run(const char *s){VuiInputDecoder d;vui_input_reset(&d);VuiEven
 int main(void){
  VuiEvent e=run("\x1b" "x"); assert(e.key.key==VUI_KEY_CHAR&&e.key.character=='x'&&e.key.modifiers==VUI_MOD_ALT);
  e=run("\x1b[1;5C"); assert(e.key.key==VUI_KEY_RIGHT&&e.key.modifiers==VUI_MOD_CTRL);
- e=run("\x1b[36;5u"); assert(e.key.character=='$'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)&&e.key.base=='4'); // US: $ is Shift+4
+ e=run("\x1b[36;5u"); assert(e.key.character=='4'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)&&e.key.base=='4'); // US: $ is Shift+4
  e=run("\x1bQ"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b[81;4u"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b[113;4u"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
@@ -33,7 +33,7 @@ int main(void){
    assert(n==9&&ev[0].type==VUI_EVENT_PASTE_START&&ev[1].text.codepoint=='a'&&ev[2].text.codepoint=='\n'&&ev[3].text.codepoint=='\t'
      &&ev[5].text.codepoint==0xe9&&ev[6].type==VUI_EVENT_TEXT&&ev[6].text.codepoint==3&&ev[7].type==VUI_EVENT_PASTE_END&&ev[8].text.codepoint=='z'); }
  e=run("\x1b[27;5;233~"); assert(e.key.character==0xe9&&e.key.modifiers==VUI_MOD_CTRL);
- e=run("\x1b[27;6;36~"); assert(e.key.character=='$'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT));
+ e=run("\x1b[27;6;36~"); assert(e.key.character=='4'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT));
  e=run("\x1b[27;5;13~"); assert(e.key.key==VUI_KEY_ENTER&&e.key.modifiers==VUI_MOD_CTRL);
  e=run("\x1b[233;5u"); assert(e.key.character==0xe9&&e.key.modifiers==VUI_MOD_CTRL);
  e=run("\xc3\xa9"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint==0xe9);
@@ -55,7 +55,7 @@ int main(void){
  // French layout table
  assert(vui_set_layout("fr")==0&&vui_set_layout("klingon")==-1);
  e=run("\x1b&"); assert(e.key.base=='1'&&e.key.modifiers==VUI_MOD_ALT);
- e=run("\x1b" "1"); assert(e.key.base=='1'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ e=run("\x1b" "1"); assert(e.key.base=='1'&&e.key.character=='&'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b\xc3\xa9"); assert(e.key.base=='2'&&e.key.character==0xe9&&e.key.modifiers==VUI_MOD_ALT);
  e=run("\x1b[27;5;233~"); assert(e.key.base=='2'&&e.key.modifiers==VUI_MOD_CTRL);
  e=run("\x1b[233;7u"); assert(e.key.base=='2'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_ALT));
@@ -71,7 +71,7 @@ int main(void){
  probe_value=-1; e=run("\x1b" "1"); assert(e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT)); // cannot tell: the table's guess
  probe_value=1; e=run("\x1b[233;3u"); assert(e.key.modifiers==VUI_MOD_ALT); // kitty says its own modifiers, probe unused
  probe_value=0; e=run("\x1b" "2"); assert(e.key.character==0xe9&&e.key.base=='2'&&e.key.modifiers==VUI_MOD_ALT); // Alt+é, not Alt+2
- probe_value=1; e=run("\x1b" "2"); assert(e.key.character=='2'&&e.key.base=='2'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ probe_value=1; e=run("\x1b" "2"); assert(e.key.character==0xe9&&e.key.base=='2'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT)); // Alt+Shift+é
  probe_value=VUI_MOD_CTRL; e=run("&"); assert(e.type==VUI_EVENT_KEY&&e.key.character=='&'&&e.key.base=='1'&&e.key.modifiers==VUI_MOD_CTRL); // Ctrl+&
  probe_value=VUI_MOD_CTRL|VUI_MOD_SHIFT; e=run("1"); assert(e.key.base=='1'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)); // Ctrl+Shift+&
  probe_value=VUI_MOD_CTRL|VUI_MOD_SHIFT; e=run("\x01"); assert(e.key.character=='a'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)); // Ctrl+Shift+a
