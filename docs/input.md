@@ -14,7 +14,10 @@
 | `VUI_EVENT_NONE` | | Nothing complete yet; poll again |
 
 Rule of thumb: a plain `q` is `TEXT`, `Ctrl-q` is `KEY` + `VUI_KEY_CHAR` + `VUI_MOD_CTRL` + `'q'`.
-Alt+x is `KEY`/`CHAR`/`ALT`, never text. `character` is lowercase for Ctrl combos.
+Alt+x is `KEY`/`CHAR`/`ALT`, never text. A letter key is always the lowercase `character` plus `VUI_MOD_SHIFT` when
+Shift is held (Alt+Shift+q is `'q'`, ALT|SHIFT, however the terminal reports it: `ESC Q`, `CSI 113;4u`...), like dwm's
+`XK_q` + `ShiftMask`. Symbols can't be normalised: a terminal sends the shifted character (`!`, or `1` on AZERTY),
+so bind what the layout types.
 
 ## What a terminal can actually send
 

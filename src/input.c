@@ -87,7 +87,7 @@ static VuiEvent decode_byte(VuiInputDecoder *decoder, uint8_t byte)
     return event;
 }
 
-VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
+static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
 {
     VuiEvent event = { .type = VUI_EVENT_NONE };
 
@@ -143,6 +143,20 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
     }
 
     return event;
+}
+
+// A letter key is always reported as the lowercase letter plus VUI_MOD_SHIFT, whatever the terminal sent: a legacy
+// terminal says Alt+Shift+q as ESC 'Q' (no Shift), a kitty / modifyOtherKeys one as 'q' or 'Q' with Shift.
+VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
+{
+    VuiEvent e = feed(decoder, byte);
+
+    if (e.type == VUI_EVENT_KEY && e.key.key == VUI_KEY_CHAR && e.key.character >= 'A' && e.key.character <= 'Z') {
+        e.key.character += 'a' - 'A';
+        e.key.modifiers |= VUI_MOD_SHIFT;
+    }
+
+    return e;
 }
 
 int vui_input_pending_escape(const VuiInputDecoder *decoder)

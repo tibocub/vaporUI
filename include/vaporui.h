@@ -412,7 +412,7 @@ VuiNode *vui_focus(VuiCtx *ui);
 
 // For your own loop: draws a frame when something may have changed (not while more input is
 // waiting, and at most every few ms), then waits for and returns the next event (never NONE; may be
-// VUI_EVENT_CLOSE). `for (;;) { e = vui_next_event(ui, root); ...; vui_dispatch(ui, root, &e); }`
+// VUI_EVENT_CLOSE, also after vui_quit()). `for (;;) { e = vui_next_event(ui, root); ...; vui_dispatch(ui, root, &e); }`
 VuiEvent vui_next_event(VuiCtx *ui, VuiNode *root);
 
 // The whole loop: render (skipped while more input is already waiting), wait for an

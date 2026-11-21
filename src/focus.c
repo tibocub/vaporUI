@@ -472,6 +472,10 @@ VuiEvent vui_next_event(VuiCtx *ui, VuiNode *root)
         uint64_t now = vui_platform_now_ms();
         VuiEvent event;
 
+        if (ui->quit) {
+            return (VuiEvent){ .type = VUI_EVENT_CLOSE }; // vui_quit() ends your own loop too
+        }
+
         ui->frame_wait = -1;
 
         if (ui->dirty) {

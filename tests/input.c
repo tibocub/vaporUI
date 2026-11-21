@@ -9,6 +9,9 @@ int main(void){
  VuiEvent e=run("\x1b" "x"); assert(e.key.key==VUI_KEY_CHAR&&e.key.character=='x'&&e.key.modifiers==VUI_MOD_ALT);
  e=run("\x1b[1;5C"); assert(e.key.key==VUI_KEY_RIGHT&&e.key.modifiers==VUI_MOD_CTRL);
  e=run("\x1b[36;5u"); assert(e.key.character=='$'&&e.key.modifiers==VUI_MOD_CTRL);
+ e=run("\x1bQ"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ e=run("\x1b[81;4u"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ e=run("\x1b[113;4u"); assert(e.key.character=='q'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b[97;4u"); assert(e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
  e=run("\x1b[Z"); assert(e.key.key==VUI_KEY_TAB&&e.key.modifiers==VUI_MOD_SHIFT);
  e=run("\x1bOA"); assert(e.key.key==VUI_KEY_UP);
