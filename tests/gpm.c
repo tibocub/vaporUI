@@ -55,6 +55,14 @@ int main(void)
     ev(b, 2, 0, 5, 5, 8, 0); assert(vui_gpm_event(b, 1, &st, o) == 2 && o[0].mouse.action == VUI_MOUSE_PRESS && o[1].mouse.action == VUI_MOUSE_RELEASE && o[1].mouse.button == VUI_MOUSE_MIDDLE);
     DY = 20; ev(b, 0, 0, 5, 5, 1, 0); vui_gpm_state_init(&st, 10); st.mid = 1;
     assert(vui_gpm_event(b, 1, &st, o) == 1 && o[0].mouse.button == VUI_MOUSE_WHEEL_DOWN); // pushing down scrolls down
+    // the pointer holds still during the lever and carries on from there
+    vui_gpm_state_init(&st, 10); st.cols = 80; st.rows = 24;
+    DY = 0;  ev(b, 2, 0, 10, 10, 4, 0); vui_gpm_event(b, 1, &st, o);                                   // middle down at (10,10)
+    DY = -12; ev(b, 2, 0, 14, 12, 2, 0); assert(vui_gpm_event(b, 1, &st, o) == 1 && o[0].mouse.x == 9 && o[0].mouse.y == 9); // wheel, held at (10,10)
+    DY = 0;  ev(b, 2, 0, 16, 12, 8, 0); vui_gpm_event(b, 1, &st, o);                                   // released after the daemon moved to (16,12)
+    ev(b, 0, 0, 17, 12, 1, 0); assert(vui_gpm_event(b, 2, &st, o) == 1 && o[0].mouse.x == 10 && o[0].mouse.y == 9); // one step right of (10,10)
+    ev(b, 0, 0, 80, 12, 1, 0); assert(vui_gpm_event(b, 2, &st, o) == 1 && o[0].mouse.x == 79);        // daemon at the right edge: ours too
+    ev(b, 0, 0, 70, 12, 1, 0); assert(vui_gpm_event(b, 2, &st, o) == 1 && o[0].mouse.x == 69);        // offset gone
     puts("gpm: ok");
     return 0;
 }

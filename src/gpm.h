@@ -19,7 +19,10 @@ void vui_gpm_hello(unsigned char out[VUI_GPM_HELLO_SIZE], int pid, int vc);
 // Wheel emulation for pointing devices that have no wheel (a ThinkPad TrackPoint, most touchpads under gpm): while the
 // middle button is held, vertical motion scrolls, one wheel step per `units` of movement (up = wheel up). A middle
 // click that did not scroll is still reported as a click, when the button goes up.
-typedef struct { int units, mid, scrolled, acc; } VuiGpmState;
+// The pointer stays where it was while the lever is used, and carries on from there afterwards (the daemon's own
+// position keeps moving, so a difference is remembered; it is dropped when the daemon's position reaches a screen edge).
+// Set cols and rows (the screen size) for that edge handling.
+typedef struct { int units, mid, scrolled, acc; int cols, rows, px, py, off_x, off_y; } VuiGpmState;
 void vui_gpm_state_init(VuiGpmState *st, int units); // units 0: no emulation
 
 // One Gpm_Event -> up to two mouse events (out[0], out[1]); returns how many. level is vui_set_mouse's (1 clicks and

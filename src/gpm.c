@@ -28,7 +28,7 @@ void vui_gpm_state_init(VuiGpmState *st, int units)
 int vui_gpm_event(const unsigned char in[VUI_GPM_EVENT_SIZE], int level, VuiGpmState *st, VuiEvent out[2])
 {
     unsigned buttons = in[0], mods = in[1], type;
-    int dy = get16(in + 6), x = get16(in + 8), y = get16(in + 10), wdy = get16(in + 26);
+    int rx, ry, dy = get16(in + 6), x = get16(in + 8), y = get16(in + 10), wdy = get16(in + 26);
     VuiMouseEvent *m = &out[0].mouse;
 
     memcpy(&type, in + 12, sizeof(type)); // host byte order, like the rest of the struct
@@ -39,6 +39,24 @@ int vui_gpm_event(const unsigned char in[VUI_GPM_EVENT_SIZE], int level, VuiGpmS
     // margin flag set). Dropping those froze a selection at the left edge: keep them at the nearest cell.
     if (x < 1) x = 1;
     if (y < 1) y = 1;
+    rx = x;
+    ry = y;
+
+    if (st->mid) { // the lever: the pointer is held where the button went down
+        x = st->px;
+        y = st->py;
+    } else if (st->off_x != 0 || st->off_y != 0) { // carrying on from where the lever left it
+        int gx = x, gy = y;
+
+        x -= st->off_x;
+        y -= st->off_y;
+        if (st->cols > 0 && (gx <= 1 || gx >= st->cols)) { st->off_x = 0; x = gx; } // the daemon's pointer is at an edge: so is ours
+        if (st->rows > 0 && (gy <= 1 || gy >= st->rows)) { st->off_y = 0; y = gy; }
+        if (x < 1) x = 1;
+        if (y < 1) y = 1;
+        if (st->cols > 0 && x > st->cols) x = st->cols;
+        if (st->rows > 0 && y > st->rows) y = st->rows;
+    }
 
     out[0] = (VuiEvent){ .type = VUI_EVENT_MOUSE };
     m->x = (unsigned)(x - 1);
@@ -54,12 +72,16 @@ int vui_gpm_event(const unsigned char in[VUI_GPM_EVENT_SIZE], int level, VuiGpmS
 
     if (st->units > 0 && m->button == VUI_MOUSE_MIDDLE && (type & (DOWN | UP))) { // middle button as a scroll lever
         if (type & DOWN) {
+            st->px = x;
+            st->py = y;
             st->mid = 1;
             st->scrolled = 0;
             st->acc = 0;
             return 0; // reported on release, if it was a click
         }
         if (st->mid) {
+            st->off_x = rx - st->px; // from now on the daemon's position minus this is ours
+            st->off_y = ry - st->py;
             st->mid = 0;
             if (st->scrolled) return 0;
             out[1] = out[0];

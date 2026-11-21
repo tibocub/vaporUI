@@ -439,6 +439,12 @@ static VuiEvent gpm_read(void)
     gpm_have = 0;
 
     VuiEvent two[2];
+    struct winsize ws;
+
+    if (ioctl(tty_fd, TIOCGWINSZ, &ws) == 0) {
+        gpm_state.cols = ws.ws_col;
+        gpm_state.rows = ws.ws_row;
+    }
 
     if (vui_gpm_event(gpm_buf, 2, &gpm_state, two) == 0) return event; // always with motion: the pointer follows it
     gpm_pending = two[1].type == VUI_EVENT_MOUSE ? two[1] : (VuiEvent){ .type = VUI_EVENT_NONE };
