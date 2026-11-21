@@ -4,7 +4,7 @@
 #include <string.h>
 #include "input.h"
 #include <stdio.h>
-static int probe_value=-1;static int probe(void){return probe_value;}
+static int probe_value=-1;static int probe(void){return probe_value;} // VuiModifiers held, -1 unknown
 static VuiEvent run(const char *s){VuiInputDecoder d;vui_input_reset(&d);VuiEvent e={0};for(;*s;s++){VuiEvent x=vui_input_feed(&d,(uint8_t)*s);if(x.type)e=x;}return e;}
 int main(void){
  VuiEvent e=run("\x1b" "x"); assert(e.key.key==VUI_KEY_CHAR&&e.key.character=='x'&&e.key.modifiers==VUI_MOD_ALT);
@@ -70,6 +70,13 @@ int main(void){
  probe_value=0; e=run("\x1b" "Q"); assert(e.key.character=='q'&&e.key.modifiers==VUI_MOD_ALT); // Caps Lock, no Shift
  probe_value=-1; e=run("\x1b" "1"); assert(e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT)); // cannot tell: the table's guess
  probe_value=1; e=run("\x1b[233;3u"); assert(e.key.modifiers==VUI_MOD_ALT); // kitty says its own modifiers, probe unused
+ probe_value=0; e=run("\x1b" "2"); assert(e.key.character==0xe9&&e.key.base=='2'&&e.key.modifiers==VUI_MOD_ALT); // Alt+é, not Alt+2
+ probe_value=1; e=run("\x1b" "2"); assert(e.key.character=='2'&&e.key.base=='2'&&e.key.modifiers==(VUI_MOD_ALT|VUI_MOD_SHIFT));
+ probe_value=VUI_MOD_CTRL; e=run("&"); assert(e.type==VUI_EVENT_KEY&&e.key.character=='&'&&e.key.base=='1'&&e.key.modifiers==VUI_MOD_CTRL); // Ctrl+&
+ probe_value=VUI_MOD_CTRL|VUI_MOD_SHIFT; e=run("1"); assert(e.key.base=='1'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)); // Ctrl+Shift+&
+ probe_value=VUI_MOD_CTRL|VUI_MOD_SHIFT; e=run("\x01"); assert(e.key.character=='a'&&e.key.modifiers==(VUI_MOD_CTRL|VUI_MOD_SHIFT)); // Ctrl+Shift+a
+ probe_value=0; e=run("&"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint=='&'); // plain typing stays text
+ probe_value=VUI_MOD_SHIFT; e=run("1"); assert(e.type==VUI_EVENT_TEXT); // Shift alone is just a capital / symbol
  vui_input_set_shift_probe(NULL);
  vui_set_layout("us");
  puts("input decoder: ok");

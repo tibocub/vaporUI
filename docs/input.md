@@ -62,12 +62,14 @@ protocol (tier 2-3 above). When they arrive, `base` works for them like for any 
 
 ### The Linux console (TTY)
 
-The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information: on a French keymap Alt+é
-and Alt+Shift+é are both `ESC 2`, and Ctrl+é is `0x1e` (Ctrl+^), the same as a real Ctrl+^. vaporUI recovers the
-first one: when stdin is a real VT, an `ESC <char>` is followed by a `TIOCL_GETSHIFTSTATE` ioctl that says whether Shift
-is down (`vui_input_set_shift_probe`, installed by the POSIX backend), and that replaces the Shift the typed
-character would imply. So Alt+é is `'2'` + ALT and Alt+Shift+é is `'2'` + ALT|SHIFT, base `'2'` for both. Over ssh or in
-a terminal emulator there is no VT to ask. Alt+F1..F6 switch virtual terminals in the kernel and never reach the app.
+The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information. On a French keymap Alt+é and
+Alt+Shift+é are both `ESC 2`, Ctrl+& is a plain `&`, and Ctrl+é is `0x1e` (Ctrl+^), the same as a real Ctrl+^.
+vaporUI recovers what it can: when stdin is a real VT, each ESC-prefixed character, Ctrl+letter byte and typed
+character is followed by a `TIOCL_GETSHIFTSTATE` ioctl that says which of Shift/Ctrl/Alt are down right now
+(`vui_input_set_shift_probe`, installed by the POSIX backend). That restores Alt+é (`'é'` + ALT, base `'2'`, as
+opposed to Alt+Shift+é = `'2'` + ALT|SHIFT), Ctrl+& (`'&'` + CTRL, base `'1'`) and Ctrl+Shift+letter. Not recoverable:
+Ctrl+é and similar, where the kernel sends another key's control byte. Over ssh or in a terminal emulator there is no
+VT to ask. Alt+F1..F6 switch virtual terminals in the kernel and never reach the app.
 
 ### Terminal shortcuts
 

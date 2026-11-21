@@ -107,7 +107,11 @@ static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
         if (decoder->vt.state == VUI_VT_STATE_INTRO && byte != '[' && byte != 'O') {
             decoder->in_escape = 0;
             decoder->alt = 1;
-            decoder->shift_state = shift_probe != NULL ? shift_probe() : -1;
+            {
+                int m = shift_probe != NULL ? shift_probe() : -1;
+
+                decoder->shift_state = m < 0 ? -1 : (m & VUI_MOD_SHIFT) ? 1 : 0;
+            }
         } else {
             VuiEvent parsed;
 
@@ -142,6 +146,23 @@ static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
     }
 
     event = decode_byte(decoder, byte);
+
+    // Console that can say which modifiers are down: restore what its keymap dropped
+    if (shift_probe != NULL && !decoder->alt && !decoder->in_paste) {
+        if (event.type == VUI_EVENT_TEXT || (event.type == VUI_EVENT_KEY && event.key.key == VUI_KEY_CHAR)) {
+            int m = shift_probe();
+
+            if (m >= 0) {
+                decoder->shift_state = (m & VUI_MOD_SHIFT) ? 1 : 0;
+
+                if (event.type == VUI_EVENT_TEXT && (m & VUI_MOD_CTRL)) { // typed char with Ctrl held: the keymap dropped it
+                    event = char_key_event(event.text.codepoint, (VuiModifiers)(m & (VUI_MOD_SHIFT | VUI_MOD_CTRL)));
+                } else if (event.type == VUI_EVENT_TEXT) {
+                    decoder->shift_state = -1; // plain text stays text, Shift is already in the character
+                }
+            }
+        }
+    }
 
     if (decoder->alt && event.type != VUI_EVENT_NONE) {
         decoder->alt = 0;
@@ -242,6 +263,17 @@ VuiEvent vui_input_feed(VuiInputDecoder *decoder, uint8_t byte)
                 if (l->typed == k->character) {
                     k->base = l->base;
                     if (l->shift && decoder->shift_state < 0) k->modifiers |= VUI_MOD_SHIFT;
+                    break;
+                }
+            }
+        }
+
+        // The console sent the shifted character (Alt+e-acute is ESC 2) but says Shift is up: the key types the
+        // unshifted one on this layout
+        if (decoder->shift_state == 0) {
+            for (const LayoutKey *l = layout; l->typed != 0; l++) {
+                if (l->base == k->base && !l->shift) {
+                    k->character = l->typed;
                     break;
                 }
             }

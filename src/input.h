@@ -18,9 +18,10 @@ typedef struct {
 
 void vui_input_reset(VuiInputDecoder *decoder);
 
-// Some consoles send Alt+key as ESC <char> whether or not Shift is held (the Linux console, French keymap: Alt+e-acute
-// and Alt+Shift+e-acute are both ESC 2). A backend that can ask the console whether Shift is down right now installs
-// a probe (returns 1, 0, or -1 if it cannot tell); it is consulted for ESC-prefixed characters only.
+// Some consoles lose modifiers: the Linux console, French keymap, sends Alt+e-acute and Alt+Shift+e-acute both as
+// ESC 2, and Ctrl+& as a plain '&'. A backend that can ask the console which modifiers are down right now installs
+// a probe: it returns the VuiModifiers held (VUI_MOD_SHIFT | VUI_MOD_ALT | VUI_MOD_CTRL), or -1 if it cannot tell. It
+// is asked for ESC-prefixed characters, for Ctrl+letter bytes and for plain typed characters (to catch Ctrl held).
 typedef int (*VuiShiftProbe)(void);
 void vui_input_set_shift_probe(VuiShiftProbe probe);
 

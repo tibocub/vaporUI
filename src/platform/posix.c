@@ -62,13 +62,16 @@ static void keys_stop(void)
 
 #ifdef __linux__
 // The Linux console sends Alt+e-acute and Alt+Shift+e-acute as the same ESC 2 (the keymap says Meta_two for both), so
-// ask the console whether Shift is down right now (what the `shiftstate` utility does). bit 0 = Shift.
+// ask the console which modifiers are down right now (what the `shiftstate` utility does).
 // shortcut: Shift released before we ask (a few microseconds after the key arrived) reads as not held.
 static int vt_shift(void)
 {
     char state = TIOCL_GETSHIFTSTATE;
 
-    return ioctl(tty_fd, TIOCLINUX, &state) < 0 ? -1 : (state & 1);
+    if (ioctl(tty_fd, TIOCLINUX, &state) < 0) return -1;
+
+    // kernel bits: 1 shift, 2 altgr, 4 ctrl, 8 alt
+    return ((state & 1) ? VUI_MOD_SHIFT : 0) | ((state & 4) ? VUI_MOD_CTRL : 0) | ((state & 8) ? VUI_MOD_ALT : 0);
 }
 #endif
 
