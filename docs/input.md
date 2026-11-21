@@ -65,7 +65,7 @@ Where `base` comes from:
 1. **The terminal**, with the kitty keyboard protocol's alternate keys (vaporUI asks for them at init): kitty, foot,
    WezTerm, Ghostty, Alacritty. Exact, nothing to configure.
 2. **A layout table**, for every other terminal (GNOME Terminal, xterm, the Linux console...), which cannot tell:
-   `vui_set_layout("fr")` or `VUI_LAYOUT=fr` in the environment (`us`, the default, and `fr` for now; a table is a
+   `vui_set_layout("fr")` or `VUI_LAYOUT=fr` in the environment (`us`, the default, `fr`, `de`, `es`, `it`, `gb`; dead keys and AltGr characters have no entries; a table is a
    few lines in `src/input.c`, contributions welcome). A terminal that does send alternate keys never needs it.
 3. **Windows:** exact, from the console itself. The backend reads `KEY_EVENT` records (virtual key, scan code, control
    state) and `MOUSE_EVENT` records natively, with no VT input mode and no escape sequences, so it does not depend on

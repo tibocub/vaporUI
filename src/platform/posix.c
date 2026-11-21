@@ -38,24 +38,35 @@ static unsigned char rx[64];
 static unsigned int rx_len, rx_pos;
 
 // Extended keys: the strings and the decision are in keys.c; this reads the terminal's reply.
-// shortcut: a terminal that answers nothing costs 100 ms at start, and keys typed in that time are lost.
+// shortcut: a terminal that answers nothing costs 100 ms at start (every other one answers in a few ms). Keys typed
+// meanwhile are kept (put back in rx), not lost.
 static VuiKeyMode key_mode;
 
 static void keys_start(void)
 {
-    char buf[96];
-    size_t n = 0;
+    char buf[128];
+    size_t n = 0, a = 0, b = 0;
+    ssize_t got;
     struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
 
     fputs(VUI_KEYS_QUERY, stdout);
     fflush(stdout);
 
-    while (n < sizeof(buf) && poll(&pfd, 1, 100) > 0 && read(tty_fd, buf + n, 1) == 1) {
-        n++;
-        if (vui_keys_reply_complete(buf, n)) break;
+    while (n < sizeof(buf) && poll(&pfd, 1, 100) > 0 && (got = read(tty_fd, buf + n, sizeof(buf) - n)) > 0) {
+        n += (size_t)got;
+        if (vui_keys_find_reply(buf, n, &a, &b)) break;
     }
 
-    key_mode = vui_keys_mode(buf, n);
+    if (vui_keys_find_reply(buf, n, &a, &b)) {
+        key_mode = vui_keys_mode(buf + a, b - a);
+        memmove(buf + a, buf + b, n - b); // what is left is the user's typing
+        n -= b - a;
+    } else {
+        key_mode = VUI_KEYS_LEGACY;
+    }
+
+    for (size_t i = 0; i < n && rx_len < sizeof(rx); i++) rx[rx_len++] = (unsigned char)buf[i];
+
     fputs(vui_keys_enable(key_mode), stdout);
     fflush(stdout);
 }
@@ -272,13 +283,13 @@ static VuiEvent vt_feed(unsigned char byte)
 #ifdef __linux__
 // The keyboard layout, for terminals that can't say which key was pressed (the Linux console in raw mode doesn't
 // need it). First hit wins; a desktop session asks the desktop, a console reads the system files.
-// shortcut: reads settings once at start; a layout switched while the app runs is not noticed; KDE on Wayland is not asked.
+// Settings are read once at start (a few fopen; the desktop tools are only run in a graphical session).
+// shortcut: a layout switched while the app runs is not noticed; KDE on Wayland is not asked.
 static char layout_name[32];
 
-static int first_match(const char *cmd, const char *prefix, char open, char close)
+static int scan(FILE *f, const char *prefix, char open, char close)
 {
     char line[256];
-    FILE *f = popen(cmd, "r");
     int found = 0;
 
     if (f == NULL) return 0;
@@ -297,7 +308,25 @@ static int first_match(const char *cmd, const char *prefix, char open, char clos
             found = 1;
         }
     }
-    pclose(f);
+    return found;
+}
+
+// system files are read directly; only the two desktop tools are run
+static int match_file(const char *path, const char *prefix, char open, char close)
+{
+    FILE *f = fopen(path, "r");
+    int found = scan(f, prefix, open, close);
+
+    if (f != NULL) fclose(f);
+    return found;
+}
+
+static int match_cmd(const char *cmd, const char *prefix, char open, char close)
+{
+    FILE *f = popen(cmd, "r");
+    int found = scan(f, prefix, open, close);
+
+    if (f != NULL) pclose(f);
     return found;
 }
 
@@ -308,14 +337,18 @@ static const char *detect_layout(void)
 
     if (env != NULL && *env != '\0') return env;
 
-    if (desktop && (first_match("gsettings get org.gnome.desktop.input-sources sources 2>/dev/null", "'xkb'", '\'', '\'')
-                    || first_match("setxkbmap -query 2>/dev/null", "layout:", 0, 0))) {
+    if (desktop && (match_cmd("gsettings get org.gnome.desktop.input-sources sources 2>/dev/null", "'xkb'", '\'', '\'')
+                    || match_cmd("setxkbmap -query 2>/dev/null", "layout:", 0, 0))) {
         return layout_name;
     }
 
-    if (first_match("cat /etc/vconsole.conf 2>/dev/null", "KEYMAP=", 0, 0)
-        || first_match("cat /etc/default/keyboard 2>/dev/null", "XKBLAYOUT=", 0, 0)
-        || first_match("cat /etc/X11/xorg.conf.d/00-keyboard.conf 2>/dev/null", "\"XkbLayout\"", '"', '"')) {
+    if (match_file("/etc/vconsole.conf", "KEYMAP=", 0, 0)) {
+        if (strcmp(layout_name, "uk") == 0) strcpy(layout_name, "gb"); // the console's name for British
+        return layout_name;
+    }
+
+    if (match_file("/etc/default/keyboard", "XKBLAYOUT=", 0, 0)
+        || match_file("/etc/X11/xorg.conf.d/00-keyboard.conf", "\"XkbLayout\"", '"', '"')) {
         return layout_name;
     }
 

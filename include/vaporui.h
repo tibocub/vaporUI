@@ -110,7 +110,7 @@ typedef struct {
 void vui_set_key_release(int on);
 
 // The keyboard layout, for terminals that can't tell which physical key was pressed (most can't: kitty, foot,
-// WezTerm, Ghostty and Alacritty can). "us" (the default), "fr". NULL or "" = $VUI_LAYOUT, then what the OS says it is (Linux: X/GNOME/console
+// WezTerm, Ghostty and Alacritty can). "us" (the default), "fr", "de", "es", "it", "gb". NULL or "" = $VUI_LAYOUT, then what the OS says it is (Linux: X/GNOME/console
 // settings, Windows: the active keyboard layout), then "us". Returns -1
 // for a layout vaporUI doesn't know (nothing changes). Call it before reading events.
 int vui_set_layout(const char *name);

@@ -87,6 +87,17 @@ int main(void){
  vui_layout_hook=hook_fr; assert(vui_set_layout(NULL)==0);
  { const char *names[]={"fr","fr-latin9","fr(oss)","fr+oss","us","de","fr_CH"}; int want[]={1,1,1,1,0,0,0};
    for(int i=0;i<7;i++){ hook_name=names[i]; vui_set_layout("us"); vui_set_layout(NULL); VuiEvent k=run("\033&"); assert((k.key.base=='1')==want[i]); } }
- vui_layout_hook=NULL; vui_set_layout("us");
+ vui_layout_hook=NULL;
+ // other tables: what Alt+<char> reports as its US position
+ { struct { const char *lay, *seq; int base, shift; } c[] = {
+     { "de", "\033&", '6', 1 }, { "de", "\033/", '7', 1 }, { "de", "\033z", 'y', 0 }, { "de", "\033\xc3\xb6", ';', 0 },
+     { "es", "\033&", '6', 1 }, { "es", "\033\xc3\xb1", ';', 0 }, { "it", "\033\xc3\xb2", ';', 0 }, { "it", "\033\"", '2', 1 },
+     { "gb", "\033\"", '2', 1 }, { "gb", "\033@", '\'', 1 }, { "gb", "\033&", '7', 1 } };
+   for (unsigned i = 0; i < sizeof c / sizeof c[0]; i++) {
+     assert(vui_set_layout(c[i].lay) == 0);
+     VuiEvent k = run(c[i].seq);
+     assert(k.key.base == (unsigned)c[i].base && !!(k.key.modifiers & VUI_MOD_SHIFT) == c[i].shift);
+   } }
+ vui_set_layout("us");
  puts("input decoder: ok");
  return 0;}

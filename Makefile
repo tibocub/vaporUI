@@ -65,6 +65,8 @@ wintest: build
 test: build $(VTERM_OBJS)
 	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c src/scancode.c -o build/input-test
 	build/input-test
+	$(CC) $(CFLAGS) -Isrc tests/keys.c src/keys.c -o build/keys-test
+	build/keys-test
 	$(CC) $(CFLAGS) -Isrc tests/winkeys.c src/winkeys.c src/scancode.c src/utf8.c -o build/winkeys-test
 	build/winkeys-test
 	$(CC) $(CFLAGS) -Isrc tests/vtraw.c src/vtraw.c src/scancode.c -o build/vtraw-test
