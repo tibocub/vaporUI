@@ -370,8 +370,8 @@ static const char *detect_layout(void)
 // Mouse on the Linux console: the gpm daemon, if it runs, owns the mouse (it draws a pointer and selects text on the
 // console itself). While an app wants the mouse we connect to /dev/gpmctl and take the events (src/gpm.c), which
 // switches the daemon's own selection off for us; closing the socket gives it back. No daemon, no mouse.
-// The pointer stays the daemon's (it keeps handling plain moves): drawing one from a client needs root (TIOCL_SETSEL).
-// shortcut: while a button is down (a drag) the daemon does not move its pointer.
+// The daemon draws no pointer for a client that takes every event (and a client may only draw one as root), so the
+// frame draws its own (vui_soft_pointer). shortcut: plain motion events reach the app even at mouse level 1.
 static int gpm_fd = -1, gpm_level;
 static unsigned char gpm_buf[VUI_GPM_EVENT_SIZE];
 static unsigned int gpm_have;
@@ -383,6 +383,7 @@ static void gpm_close(void)
         gpm_fd = -1;
     }
     gpm_have = 0;
+    vui_soft_pointer = 0;
 }
 
 static void gpm_open(void)
@@ -412,6 +413,7 @@ static void gpm_open(void)
         return;
     }
     fcntl(gpm_fd, F_SETFD, FD_CLOEXEC);
+    vui_soft_pointer = 1; // the daemon draws no pointer for a client that takes every event: the frame draws one
 }
 
 // One event from the daemon, or NONE
@@ -429,7 +431,7 @@ static VuiEvent gpm_read(void)
     if (gpm_have < sizeof(gpm_buf)) return event;
     gpm_have = 0;
 
-    if (!vui_gpm_event(gpm_buf, gpm_level, &event)) event.type = VUI_EVENT_NONE;
+    if (!vui_gpm_event(gpm_buf, 2, &event)) event.type = VUI_EVENT_NONE; // always with motion: the pointer follows it
     return event;
 }
 #endif

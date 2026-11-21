@@ -190,6 +190,25 @@ static void unglue(VuiScreen *scr, unsigned int x, unsigned int y)
     }
 }
 
+// Flip the reverse-video attribute of the cell (both halves of a wide character): a software pointer
+void scr_toggle_reverse(VuiScreen *scr, unsigned int x, unsigned int y)
+{
+    Cell *row;
+
+    if (x >= scr->width || y >= scr->height) return;
+    row = &scr->back[y * scr->width];
+    if (CELL_CP(row[x]) == CONT_CP && x > 0) x--;
+
+    for (unsigned int i = x; i < scr->width && i < x + 2; i++) {
+        VuiStyle st;
+
+        if (i > x && CELL_CP(row[i]) != CONT_CP) break;
+        st = scr->styles[CELL_STYLE(row[i])];
+        st.attr ^= VUI_ATTR_REVERSE;
+        row[i] = CELL(CELL_CP(row[i]), intern(scr, st));
+    }
+}
+
 void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style)
 {
     int w = vui_cp_width(cp);

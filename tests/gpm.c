@@ -26,7 +26,7 @@ int main(void)
 
     vui_gpm_hello(h, 1234, 3);
     memcpy(masks, h, 8); memcpy(tail, h + 8, 8);
-    assert(masks[0] == 15 && masks[1] == 1 && masks[3] == 0xFFFF && tail[0] == 1234 && tail[1] == 3);
+    assert(masks[0] == 15 && masks[1] == 0 && masks[3] == 0xFFFF && tail[0] == 1234 && tail[1] == 3);
 
     ev(b, 4, 0, 10, 5, 4, 0);  assert(vui_gpm_event(b, 1, &e) && e.mouse.action == VUI_MOUSE_PRESS && e.mouse.button == VUI_MOUSE_LEFT && e.mouse.x == 9 && e.mouse.y == 4);
     ev(b, 0, 0, 10, 5, 8, 0);  assert(!vui_gpm_event(b, 1, &e)); // an UP with no button left is nothing we can name

@@ -131,7 +131,7 @@ Consequences and safety:
 
 The console has no mouse protocol; the `gpm` daemon owns the mouse and draws its own pointer and text selection. While an
 app has the mouse on (`vui_set_mouse`), the POSIX backend connects to `/dev/gpmctl` (`src/gpm.c`, pure structs; no
-libgpm needed), takes the events; the daemon keeps drawing its pointer for plain moves (a client can only draw one as root), but not while a button is held. Closing the socket (mouse off,
+libgpm needed), takes the events. The daemon then draws no pointer (a client could only draw one as root), so vaporUI draws its own: the cell under the mouse is shown in reverse video (`vui_soft_pointer`, `scr_toggle_reverse`). Plain mouse motion therefore reaches the app even at mouse level 1. Closing the socket (mouse off,
 exit) gives the mouse back to gpm, so plain text selection works again outside the app. Without the daemon running
 (`systemctl start gpm`) there is no mouse on a console. Shortcuts: the wheel's sign convention was read from gpm's
 headers, not tested on hardware.

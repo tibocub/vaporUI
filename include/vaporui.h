@@ -287,6 +287,7 @@ VuiTheme *vui_theme(void);
 VuiScreen *vui_screen(VuiCtx *ui);
 
 VuiScreen *scr_create(unsigned int width, unsigned int height);
+void scr_toggle_reverse(VuiScreen *scr, unsigned int x, unsigned int y); // flips reverse video on one cell (a software mouse pointer)
 void scr_destroy(VuiScreen *scr);
 void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height);
 

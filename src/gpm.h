@@ -11,9 +11,9 @@
 #define VUI_GPM_HELLO_SIZE 16
 #define VUI_GPM_EVENT_SIZE 28
 
-// The Gpm_Connect to send: we take every mouse event (move, drag, down, up, any modifiers). The daemon keeps handling
-// plain moves itself (defaultMask = move), which is what draws its pointer (only root may draw one from a client), but
-// presses and drags are ours: no gpm text selection while the app has the mouse; it comes back when the socket closes.
+// The Gpm_Connect to send: we take every mouse event (move, drag, down, up, any modifiers) and leave nothing to the
+// daemon's own pointer and selection (defaultMask 0), so a program that asked for the mouse has it, and loses it when
+// the socket closes. The daemon then draws no pointer: vaporUI draws its own (vui_soft_pointer).
 void vui_gpm_hello(unsigned char out[VUI_GPM_HELLO_SIZE], int pid, int vc);
 
 // One Gpm_Event -> a mouse event. level is vui_set_mouse's (1 clicks and drags, 2 also plain motion). Returns 1 when
