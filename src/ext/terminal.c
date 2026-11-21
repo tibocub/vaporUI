@@ -540,10 +540,12 @@ static int term_mouse(VuiTerminal *t, const VuiMouseEvent *m)
     }
 
     if (m->action == VUI_MOUSE_MOVE) {
-        t->drag_dir = !t->selecting ? 0 : ry < 0 ? 1 : ry >= (long)t->rows ? -1 : 0;
+        // steady scrolling while the button is held outside: the further out, the faster (rows per tick = 1 + distance)
+        t->drag_dir = !t->selecting ? 0 : ry < 0 ? (int)(1 + (-ry < 40 ? -ry : 40))
+                    : ry >= (long)t->rows ? -(int)(1 + (ry - (long)t->rows + 1 < 40 ? ry - (long)t->rows + 1 : 40)) : 0;
         t->drag_x = x;
 
-        if (t->drag_dir != 0 && t->drag_timer == 0) t->drag_timer = vui_timer(vui_ctx(), 60, 1, drag_tick, t);
+        if (t->drag_dir != 0 && t->drag_timer == 0) t->drag_timer = vui_timer(vui_ctx(), 50, 1, drag_tick, t);
     }
 
     t->sel_line[1] = ts_row_id(t->sb_base, t->sb_len, t->scroll, y);
