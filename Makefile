@@ -67,6 +67,8 @@ test: build
 	build/input-test
 	$(CC) $(CFLAGS) -Isrc tests/winkeys.c src/winkeys.c src/scancode.c src/utf8.c -o build/winkeys-test
 	build/winkeys-test
+	$(CC) $(CFLAGS) -Isrc tests/vtraw.c src/vtraw.c src/scancode.c -o build/vtraw-test
+	build/vtraw-test
 	$(CC) $(CFLAGS) tests/widgets.c tests/platform_stub.c $(SRCS) -o build/widgets-test
 	build/widgets-test
 

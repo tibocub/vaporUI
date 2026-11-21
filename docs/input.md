@@ -99,14 +99,23 @@ Known quirks, not fixed:
 
 ### The Linux console (TTY)
 
-The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information. On a French keymap Alt+é and
-Alt+Shift+é are both `ESC 2`, Ctrl+& is a plain `&`, and Ctrl+é is `0x1e` (Ctrl+^), the same as a real Ctrl+^.
-vaporUI recovers what it can: when stdin is a real VT, each ESC-prefixed character, Ctrl+letter byte and typed
-character is followed by a `TIOCL_GETSHIFTSTATE` ioctl that says which of Shift/Ctrl/Alt are down right now
-(`vui_input_set_shift_probe`, installed by the POSIX backend). That restores Alt+é (`'é'` + ALT, base `'2'`, as
-opposed to Alt+Shift+é = `'2'` + ALT|SHIFT), Ctrl+& (`'&'` + CTRL, base `'1'`) and Ctrl+Shift+letter. Not recoverable:
-Ctrl+é and similar, where the kernel sends another key's control byte. Over ssh or in a terminal emulator there is no
-VT to ask. Alt+F1..F6 switch virtual terminals in the kernel and never reach the app.
+The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information (on a French keymap Alt+é and
+Alt+Shift+é are both `ESC 2`, Ctrl+& is a plain `&`, Ctrl+é is `0x1e`, the same as Ctrl+^). So on a real VT (stdin
+answers `KDGKBTYPE`) vaporUI does what games and `showkey` do: it puts the keyboard in **K_MEDIUMRAW**, where the kernel
+reports which physical key went down or up, and translates itself (`src/vtraw.c`, pure and tested; the keymap is read
+with `KDGKBENT`, the accent table with `KDGKBDIACRUC`). The result is exact: every Ctrl/Alt/Shift combination on every
+key, with `scancode` and `base` like on Windows, dead keys and AltGr as typed, NumLock/CapsLock tracked by the app.
+
+Consequences and safety:
+- The keyboard mode belongs to the console and outlives the process, so it is restored at exit and on fatal signals,
+  and a tiny guard process restores it if the app is killed outright (SIGKILL, crash). If a keyboard is ever left
+  dead anyway: Alt+SysRq+R, or log in over ssh and `kbd_mode -u`.
+- The kernel's console switching is off in raw mode, so Ctrl+Alt+F1..F12 are handled by the backend
+  (`VT_ACTIVATE`); Alt+Fn is left to the app. Ctrl+Alt+Del does not reboot while the app runs.
+- Not done: CapsLock/NumLock LEDs, the Compose key, KT_DEAD2 accents; Shift+NumLock-style keypad inversions.
+- `VUI_RAW_KEYS=0` goes back to the old way (bytes through the kernel keymap plus a `TIOCL_GETSHIFTSTATE` probe that
+  recovers Alt+é, Ctrl+& and Ctrl+Shift+letter, but not Ctrl+é). It is also used when raw mode cannot be set up (no
+  permission, no keymap we understand). Over ssh or in a terminal emulator there is no VT: the terminal tiers apply.
 
 ### Terminal shortcuts
 

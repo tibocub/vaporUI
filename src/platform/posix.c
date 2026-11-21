@@ -12,11 +12,14 @@
 #ifdef __linux__
 #include <linux/kd.h>
 #include <linux/tiocl.h>
+#include <linux/vt.h>
+#include <sys/wait.h>
 #endif
 
 #include "../../include/vaporui.h"
 #include "../input.h"
 #include "../keys.h"
+#include "../vtraw.h"
 #include "../ctx.h"
 #include "vtout.h"
 
@@ -97,6 +100,170 @@ static void release_tty(void)
 static void release_tty(void) {}
 #endif
 
+#ifdef __linux__
+// The Linux console, raw: the kernel's keymap loses information (Ctrl+é, Alt+Shift+é...), so on a real VT the
+// keyboard is put in K_MEDIUMRAW, which reports physical keys, and src/vtraw.c does the translation with the
+// kernel's own keymap. Safety: the mode is per console and survives our exit if we die without restoring it, so
+// (1) it is restored at exit and on fatal signals, (2) a small guard process restores it if we are killed outright,
+// (3) Ctrl+Alt+F<n> switches console like the kernel did. VUI_RAW_KEYS=0 turns it all off.
+// shortcut: no LED updates for CapsLock/NumLock, no compose key, no AltGr+dead-key sequences beyond the accent table.
+static VuiVtRaw *vtraw;
+static long vt_saved_mode;
+static int guard_pipe = -1;
+static pid_t guard_pid;
+
+static void vt_restore_mode(void)
+{
+    if (vtraw != NULL) ioctl(tty_fd, KDSKBMODE, vt_saved_mode);
+}
+
+static void vt_fatal(int sig)
+{
+    signal(sig, SIG_DFL);
+    vt_restore_mode();
+    raise(sig);
+}
+
+static int vt_load_keymap(VuiVtRaw *raw)
+{
+    struct kbdiacrsuc *diacr = calloc(1, sizeof(*diacr));
+    int chars = 0;
+
+    for (int t = 0; t < VUI_VT_TABLES; t++) {
+        for (int k = 0; k < VUI_VT_KEYS; k++) {
+            struct kbentry ent = { .kb_table = (unsigned char)t, .kb_index = (unsigned char)k };
+
+            if (ioctl(tty_fd, KDGKBENT, &ent) != 0) { free(diacr); return -1; }
+            raw->map[t][k] = vui_vtraw_entry(ent.kb_value);
+            chars += t == 0 && (raw->map[t][k].type == VT_CHAR || raw->map[t][k].type == VT_LETTER);
+        }
+    }
+
+    raw->accents = 0;
+    if (diacr != NULL && ioctl(tty_fd, KDGKBDIACRUC, diacr) == 0) {
+        for (unsigned int i = 0; i < diacr->kb_cnt && i < VUI_VT_DIACR; i++) {
+            raw->accent[i] = (VuiVtAccent){ diacr->kbdiacruc[i].diacr, diacr->kbdiacruc[i].base, diacr->kbdiacruc[i].result };
+            raw->accents = i + 1;
+        }
+    }
+
+    free(diacr);
+    return chars >= 20 ? 0 : -1; // a map with no letters is not a keymap we understand
+}
+
+static void vt_raw_stop(void)
+{
+    if (vtraw == NULL) return;
+
+    vt_restore_mode();
+    free(vtraw);
+    vtraw = NULL;
+
+    if (guard_pipe >= 0) { // tell the guard we are done, it exits
+        close(guard_pipe);
+        guard_pipe = -1;
+        waitpid(guard_pid, NULL, 0);
+    }
+}
+
+static void vt_raw_start(struct termios *raw_termios)
+{
+    char kbtype;
+    int fds[2];
+    char led = 0;
+    const char *off = getenv("VUI_RAW_KEYS");
+    struct termios t;
+    static const int fatal[] = { SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL };
+
+    if (ioctl(tty_fd, KDGKBTYPE, &kbtype) != 0) return; // not a real console: pty, ssh, serial line
+
+    if (off != NULL && off[0] == '0') { // asked for the old way: Alt+é etc. recovered with the Shift probe
+        vui_input_set_shift_probe(vt_shift);
+        return;
+    }
+
+    if (ioctl(tty_fd, KDGKBMODE, &vt_saved_mode) != 0 || (vt_saved_mode != K_XLATE && vt_saved_mode != K_UNICODE)) return;
+
+    vtraw = calloc(1, sizeof(*vtraw));
+    if (vtraw == NULL || vt_load_keymap(vtraw) != 0 || pipe(fds) != 0) {
+        free(vtraw);
+        vtraw = NULL;
+        vui_input_set_shift_probe(vt_shift);
+        return;
+    }
+
+    ioctl(tty_fd, KDGKBLED, &led);
+    vui_vtraw_init(vtraw, (led & LED_NUM) != 0);
+
+    guard_pid = fork();
+    if (guard_pid == 0) { // the guard: restores the mode when the pipe closes, however we died
+        char c;
+
+        close(fds[1]);
+        setpgid(0, 0);
+        for (unsigned int i = 0; i < sizeof(fatal) / sizeof(fatal[0]); i++) signal(fatal[i], SIG_IGN);
+        while (read(fds[0], &c, 1) > 0) {}
+        ioctl(tty_fd, KDSKBMODE, vt_saved_mode);
+        _exit(0);
+    }
+
+    close(fds[0]);
+    if (guard_pid < 0) { // no guard, no raw mode
+        close(fds[1]);
+        free(vtraw);
+        vtraw = NULL;
+        vui_input_set_shift_probe(vt_shift);
+        return;
+    }
+
+    fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    guard_pipe = fds[1];
+
+    for (unsigned int i = 0; i < sizeof(fatal) / sizeof(fatal[0]); i++) signal(fatal[i], vt_fatal);
+
+    // keycode bytes are not text: no input translation at all (kbd's showkey does the same)
+    t = *raw_termios;
+    t.c_iflag = 0;
+    tcsetattr(tty_fd, TCSANOW, &t);
+    ioctl(tty_fd, KDSKBMODE, K_MEDIUMRAW);
+}
+#endif
+
+static int vt_queued(void)
+{
+#ifdef __linux__
+    return vtraw != NULL && vtraw->queue_len > 0;
+#else
+    return 0;
+#endif
+}
+
+static VuiEvent vt_pop(void)
+{
+#ifdef __linux__
+    if (vtraw != NULL) return vui_vtraw_pop(vtraw);
+#endif
+    return (VuiEvent){ .type = VUI_EVENT_NONE };
+}
+
+static VuiEvent vt_feed(unsigned char byte)
+{
+#ifdef __linux__
+    if (vtraw != NULL) {
+        VuiEvent e = vui_vtraw_feed(vtraw, byte);
+
+        if (vtraw->switch_to != 0) {
+            ioctl(tty_fd, VT_ACTIVATE, vtraw->switch_to);
+            vtraw->switch_to = 0;
+            vui_vtraw_release_all(vtraw); // the releases of Ctrl and Alt go to the other console
+        }
+
+        return e;
+    }
+#endif
+    return vui_input_feed(&input_decoder, byte);
+}
+
 int vui_platform_init(void)
 {
     struct termios raw;
@@ -158,9 +325,13 @@ int vui_platform_init(void)
     rx_len = rx_pos = 0;
     vui_clipboard_hook = vtout_osc52_copy;
     vtout_start();
+#ifdef __linux__
+    vt_raw_start(&raw);
+    if (vtraw == NULL)
+#endif
     keys_start();
 #ifdef __linux__
-    {
+    if (vtraw == NULL) {
         char kbtype; // only a real VT answers this (not a pty, ssh, or a serial line)
 
         vui_input_set_shift_probe(ioctl(tty_fd, KDGKBTYPE, &kbtype) == 0 ? vt_shift : NULL);
@@ -172,6 +343,10 @@ int vui_platform_init(void)
 
 void vui_platform_shutdown(void)
 {
+#ifdef __linux__
+    vt_raw_stop();
+    if (key_mode != VUI_KEYS_LEGACY)
+#endif
     keys_stop();
     vui_input_set_shift_probe(NULL);
     vtout_stop();
@@ -257,7 +432,7 @@ int vui_platform_input_pending(void)
 {
     struct pollfd pfd = { .fd = tty_fd, .events = POLLIN };
 
-    return resize_pending || rx_pos < rx_len || (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN));
+    return resize_pending || rx_pos < rx_len || vt_queued() || (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN));
 }
 
 // Waits up to timeout_ms (-1 = forever) for terminal input or any of the
@@ -287,8 +462,14 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
         return event;
     }
 
+    {
+        VuiEvent queued = vt_pop();
+
+        if (queued.type != VUI_EVENT_NONE) return queued;
+    }
+
     if (rx_pos < rx_len) {
-        return vui_input_feed(&input_decoder, rx[rx_pos++]);
+        return vt_feed(rx[rx_pos++]);
     }
 
     pfd[0].fd = tty_fd;
@@ -352,5 +533,5 @@ VuiEvent vui_platform_poll_event(int timeout_ms, const int *fds, unsigned int n,
     rx_len = (unsigned int)result;
     rx_pos = 0;
 
-    return vui_input_feed(&input_decoder, rx[rx_pos++]);
+    return vt_feed(rx[rx_pos++]);
 }

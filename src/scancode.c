@@ -66,3 +66,30 @@ VuiScancode vui_scancode_from_set1(unsigned int sc, int extended)
     default:   return VUI_SC_NONE;
     }
 }
+
+// Linux input keycodes (what the console's K_MEDIUMRAW reports): the main block equals set 1, the rest is its own
+VuiScancode vui_scancode_from_linux(unsigned int code)
+{
+    switch (code) {
+    case 96:  return VUI_SC_KP_ENTER;
+    case 97:  return VUI_SC_RCTRL;
+    case 98:  return VUI_SC_KP_DIVIDE;
+    case 99:  return VUI_SC_PRINTSCREEN;
+    case 100: return VUI_SC_RALT;
+    case 102: return VUI_SC_HOME;
+    case 103: return VUI_SC_UP;
+    case 104: return VUI_SC_PAGEUP;
+    case 105: return VUI_SC_LEFT;
+    case 106: return VUI_SC_RIGHT;
+    case 107: return VUI_SC_END;
+    case 108: return VUI_SC_DOWN;
+    case 109: return VUI_SC_PAGEDOWN;
+    case 110: return VUI_SC_INSERT;
+    case 111: return VUI_SC_DELETE;
+    case 119: return VUI_SC_PAUSE;
+    case 125: return VUI_SC_LGUI;
+    case 126: return VUI_SC_RGUI;
+    case 127: return VUI_SC_APPLICATION;
+    default:  return code < 0x59 ? vui_scancode_from_set1(code, 0) : VUI_SC_NONE;
+    }
+}

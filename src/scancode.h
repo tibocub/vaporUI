@@ -8,4 +8,6 @@
 
 VuiScancode vui_scancode_from_set1(unsigned int sc, int extended);
 
+VuiScancode vui_scancode_from_linux(unsigned int code);
+
 #endif
