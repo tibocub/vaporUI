@@ -7,6 +7,7 @@
 #endif
 #include <errno.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -23,39 +24,45 @@
 
 #include "../../include/vaporui.h"
 #include "../../third_party/libvterm/include/vterm.h"
+#include "../utf8.h"
+#include "termsel.h"
 
-// Scrollback: lines that scroll off the top (or off a shrinking window) wait here so that making the window
-// taller or wider again brings them back. Each line is stored at the width it had. shortcut: no way to scroll
-// back to them with the wheel, and they don't reflow themselves (only the visible rows do).
-#ifndef VUI_TERMINAL_SCROLLBACK
-#define VUI_TERMINAL_SCROLLBACK 200 // lines kept (~60 B per cell: 200 lines of 80 columns is ~1 MB; lower it on small targets)
-#endif
-
+// Scrollback: lines that scroll off the top (or off a shrinking window) wait here, in a ring, so that scrolling the
+// view or making the window taller or wider again brings them back. Each line is stored at the width it had.
+// shortcut: they don't reflow themselves (only the visible rows do). VUI_TERMINAL_SCROLLBACK (vaporui.h) = 0 builds none of it.
 typedef struct {
     int cols;
     VTermScreenCell cells[];
 } Line;
 
+#if VUI_TERMINAL_SCROLLBACK > 0
+#define SBN VUI_TERMINAL_SCROLLBACK
+
+static Line **sb_slot(const VuiTerminal *t, unsigned int i)
+{
+    return &((Line **)t->sb)[(t->sb_head + i) % SBN];
+}
+
 static int sb_push(int cols, const VTermScreenCell *cells, void *user)
 {
     VuiTerminal *t = user;
-    Line **sb = t->sb, *l = malloc(sizeof(Line) + cols * sizeof(VTermScreenCell));
+    Line *l = malloc(sizeof(Line) + cols * sizeof(VTermScreenCell));
 
     if (l == NULL) return 0;
     l->cols = cols;
     memcpy(l->cells, cells, cols * sizeof(VTermScreenCell));
 
-    if (t->sb_len == VUI_TERMINAL_SCROLLBACK) {
-        free(sb[0]);
-        memmove(sb, sb + 1, --t->sb_len * sizeof(Line *));
+    if (t->sb == NULL && (t->sb = calloc(SBN, sizeof(Line *))) == NULL) { free(l); return 0; }
+
+    if (t->sb_len == SBN) {
+        free(*sb_slot(t, 0));
+        t->sb_head = (t->sb_head + 1) % SBN;
+        t->sb_len--;
+        t->sb_base++;
     }
 
-    if (sb == NULL) {
-        sb = t->sb = calloc(VUI_TERMINAL_SCROLLBACK, sizeof(Line *));
-        if (sb == NULL) { free(l); return 0; }
-    }
-
-    sb[t->sb_len++] = l;
+    *sb_slot(t, t->sb_len++) = l;
+    if (t->scroll > 0) t->scroll = ts_scroll(t->scroll, 1, t->sb_len); // stay on the same text
     return 1;
 }
 
@@ -70,7 +77,7 @@ static int sb_pop(int cols, VTermScreenCell *cells, void *user)
 
     if (t->sb_len == 0) return 0;
 
-    l = ((Line **)t->sb)[t->sb_len - 1];
+    l = *sb_slot(t, t->sb_len - 1);
 
     for (int i = 0; i < l->cols; i++) {
         if (l->cells[i].chars[0] != 0) used = i + (l->cells[i].width > 1 ? l->cells[i].width : 1);
@@ -96,6 +103,7 @@ static int sb_pop(int cols, VTermScreenCell *cells, void *user)
     } else {
         free(l);
         t->sb_len--;
+        t->scroll = ts_scroll(t->scroll, 0, t->sb_len);
     }
 
     return 1;
@@ -105,8 +113,107 @@ static int sb_clear(void *user)
 {
     VuiTerminal *t = user;
 
-    while (t->sb_len > 0) free(((Line **)t->sb)[--t->sb_len]);
+    while (t->sb_len > 0) free(*sb_slot(t, --t->sb_len));
+    t->sb_head = 0;
+    t->scroll = 0;
+    t->sel_on = 0;
     return 1;
+}
+#else
+#define sb_push NULL
+#define sb_pop NULL
+#define sb_clear NULL
+#endif
+
+void terminal_scroll(VuiTerminal *t, int rows)
+{
+    if (VUI_TERMINAL_SCROLLBACK > 0 && !t->altscreen) t->scroll = ts_scroll(t->scroll, rows, t->sb_len);
+}
+
+void terminal_scroll_reset(VuiTerminal *t) { t->scroll = 0; }
+unsigned int terminal_scroll_offset(const VuiTerminal *t) { return t->scroll; }
+void terminal_selection_clear(VuiTerminal *t) { t->sel_on = t->selecting = 0; }
+
+// The cell at column x of view line `idx` (an index: below sb_len a scrollback line, then the screen rows);
+// returns 0 for a blank beyond the line's end.
+static int cell_at(const VuiTerminal *t, long idx, int x, VTermScreenCell *c)
+{
+#if VUI_TERMINAL_SCROLLBACK > 0
+    if (idx < (long)t->sb_len) {
+        const Line *l = *sb_slot(t, idx);
+
+        if (x >= l->cols) return 0;
+        *c = l->cells[x];
+        return 1;
+    }
+#endif
+    if (x >= (int)t->cols) return 0;
+    vterm_screen_get_cell(t->screen, (VTermPos){ idx - t->sb_len, x }, c);
+    return 1;
+}
+
+static int line_width(const VuiTerminal *t, long idx)
+{
+#if VUI_TERMINAL_SCROLLBACK > 0
+    if (idx < (long)t->sb_len) return (*sb_slot(t, idx))->cols;
+#endif
+    return t->cols;
+}
+
+static int blank(const VTermScreenCell *c) { return c->chars[0] == 0 || c->chars[0] == ' '; }
+
+size_t terminal_selection_text(const VuiTerminal *t, char *out, size_t size)
+{
+    TsPos a = { t->sel_line[0], t->sel_col[0] }, b = { t->sel_line[1], t->sel_col[1] };
+    size_t n = 0;
+    long lo, hi;
+
+    if (!t->sel_on) {
+        if (size > 0) out[0] = 0;
+        return 0;
+    }
+
+    if (ts_cmp(a, b) > 0) { TsPos x = a; a = b; b = x; }
+    lo = a.line - t->sb_base;
+    hi = b.line - t->sb_base;
+    if (lo < 0) lo = 0; // dropped off the scrollback since
+
+    for (long idx = lo; idx <= hi && idx < (long)t->sb_len + (long)t->rows; idx++) {
+        int c0, c1, pending = 0;
+
+        if (idx > lo) { if (n + 1 < size) out[n] = '\n'; n++; }
+        if (!ts_span(a, b, idx + t->sb_base, line_width(t, idx), &c0, &c1)) continue;
+
+        for (int x = c0; x < c1; x++) {
+            VTermScreenCell c;
+            uint8_t enc[4];
+
+            if (!cell_at(t, idx, x, &c) || c.chars[0] == (uint32_t)-1) continue;
+            if (blank(&c)) { pending++; continue; } // trailing blanks are dropped, so they wait
+
+            for (; pending > 0; pending--) { if (n + 1 < size) out[n] = ' '; n++; }
+
+            for (int k = 0; k < VTERM_MAX_CHARS_PER_CELL && c.chars[k] != 0; k++) {
+                int len = vui_utf8_encode(c.chars[k], enc);
+
+                for (int m = 0; m < len; m++) { if (n + 1 < size) out[n] = (char)enc[m]; n++; }
+            }
+        }
+    }
+
+    if (size > 0) out[n < size ? n : size - 1] = 0;
+    return n;
+}
+
+void terminal_copy(VuiTerminal *t)
+{
+    size_t n = terminal_selection_text(t, NULL, 0);
+    char *buf = n > 0 ? malloc(n + 1) : NULL;
+
+    if (buf == NULL) return;
+    terminal_selection_text(t, buf, n + 1);
+    vui_clipboard_set(buf);
+    free(buf);
 }
 
 static VuiColor color(VTermScreen *screen, VTermColor c)
@@ -132,6 +239,7 @@ static void term_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 
         t->cols = r.width;
         t->rows = r.height;
+        t->sel_on = t->selecting = 0; // rows re-wrap: the selection's lines no longer match
         vterm_set_size(t->vt, t->rows, t->cols);
         if (t->fd >= 0) ioctl(t->fd, TIOCSWINSZ, &ws);
     }
@@ -139,30 +247,127 @@ static void term_draw(VuiNode *node, VuiScreen *scr, void *userdata)
     scr_fill(scr, r, ' ', blank);
 
     for (unsigned int y = 0; y < r.height && y < t->rows; y++) {
-        for (unsigned int x = 0; x < r.width && x < t->cols; x++) {
+        long idx = (long)t->sb_len - (long)t->scroll + y;
+        int c0 = 0, c1 = 0, sel = t->sel_on && ts_span((TsPos){ t->sel_line[0], t->sel_col[0] }, (TsPos){ t->sel_line[1], t->sel_col[1] },
+                                                       idx + t->sb_base, r.width, &c0, &c1);
+
+        for (unsigned int x = 0; x < r.width; x++) {
             VTermScreenCell c;
             VuiStyle s = { 0 };
+            int selected = sel && (int)x >= c0 && (int)x < c1;
 
-            vterm_screen_get_cell(t->screen, (VTermPos){ y, x }, &c);
-            if (c.chars[0] == 0 || c.chars[0] == (uint32_t)-1) continue; // empty, or the right half of a wide char
+            if (!cell_at(t, idx, x, &c) || c.chars[0] == 0 || c.chars[0] == (uint32_t)-1) c.chars[0] = 0; // blank, or the right half of a wide char
+            if (c.chars[0] == 0 && !selected) continue;
 
-            s.fg = color(t->screen, c.fg);
-            s.bg = color(t->screen, c.bg);
-            s.attr = (c.attrs.bold ? VUI_ATTR_BOLD : 0) | (c.attrs.underline ? VUI_ATTR_UNDERLINE : 0) | (c.attrs.reverse ? VUI_ATTR_REVERSE : 0);
+            if (c.chars[0] != 0 || selected) {
+                s.fg = color(t->screen, c.fg);
+                s.bg = color(t->screen, c.bg);
+                s.attr = (c.attrs.bold ? VUI_ATTR_BOLD : 0) | (c.attrs.underline ? VUI_ATTR_UNDERLINE : 0) | (c.attrs.reverse ? VUI_ATTR_REVERSE : 0);
+                if (selected) s.attr ^= VUI_ATTR_REVERSE;
+            }
+
             // shortcut: only the base character is drawn, combining marks are dropped
-            scr_set(scr, r.x + x, r.y + y, c.chars[0], s);
+            scr_set(scr, r.x + x, r.y + y, c.chars[0] ? c.chars[0] : ' ', s);
         }
+    }
+
+    if (t->scroll > 0) {
+        char tag[16];
+        int n = snprintf(tag, sizeof(tag), "[%u]", t->scroll);
+
+        if ((unsigned)n <= r.width) scr_puts(scr, r.x + r.width - n, r.y, tag, (VuiStyle){ .attr = VUI_ATTR_REVERSE });
     }
 
     vterm_state_get_cursorpos(vterm_obtain_state(t->vt), &cur);
 
-    if (node->focused && t->cursor_visible && (unsigned)cur.col < r.width && (unsigned)cur.row < r.height) {
+    if (node->focused && t->cursor_visible && t->scroll == 0 && (unsigned)cur.col < r.width && (unsigned)cur.row < r.height) {
         VTermScreenCell c;
         VuiStyle s = { .attr = VUI_ATTR_REVERSE };
 
         vterm_screen_get_cell(t->screen, cur, &c);
         scr_set(scr, r.x + cur.col, r.y + cur.row, c.chars[0] && c.chars[0] != (uint32_t)-1 ? c.chars[0] : ' ', s);
     }
+}
+
+// Mouse: to the program when it asked for it, else select (left drag) and scroll (wheel). A gesture that started
+// one way finishes that way, whatever Shift does meanwhile.
+static int term_mouse(VuiTerminal *t, const VuiMouseEvent *m)
+{
+    VTermModifier mod = (m->modifiers & VUI_MOD_SHIFT ? VTERM_MOD_SHIFT : 0) | (m->modifiers & VUI_MOD_ALT ? VTERM_MOD_ALT : 0)
+                      | (m->modifiers & VUI_MOD_CTRL ? VTERM_MOD_CTRL : 0);
+    long rx = (long)m->x - t->node.rect.x, ry = (long)m->y - t->node.rect.y;
+    int x = rx < 0 ? 0 : rx >= (long)t->cols ? (int)t->cols - 1 : (int)rx;
+    int y = ry < 0 ? 0 : ry >= (long)t->rows ? (int)t->rows - 1 : (int)ry;
+    int wheel = m->button == VUI_MOUSE_WHEEL_UP || m->button == VUI_MOUSE_WHEEL_DOWN;
+    int want = !t->selecting && (t->fwd || (t->mouse_mode != 0 && !(m->modifiers & VUI_MOD_SHIFT)));
+
+    if (t->fd < 0 && want) want = 0;
+
+    if (want) {
+        int b = m->button == VUI_MOUSE_LEFT ? 1 : m->button == VUI_MOUSE_MIDDLE ? 2 : m->button == VUI_MOUSE_RIGHT ? 3
+              : m->button == VUI_MOUSE_WHEEL_UP ? 4 : m->button == VUI_MOUSE_WHEEL_DOWN ? 5 : 0;
+
+        vterm_mouse_move(t->vt, y, x, mod);
+        if (b > 0 && m->action != VUI_MOUSE_MOVE) {
+            vterm_mouse_button(t->vt, b, m->action == VUI_MOUSE_PRESS, mod);
+            if (b <= 3) t->fwd = m->action == VUI_MOUSE_PRESS;
+        }
+        return b > 0 || m->action == VUI_MOUSE_MOVE;
+    }
+
+    if (wheel) {
+        terminal_scroll(t, m->button == VUI_MOUSE_WHEEL_UP ? 3 : -3);
+        return 1;
+    }
+
+    if (m->button != VUI_MOUSE_LEFT) return 0;
+
+    if (m->action == VUI_MOUSE_RELEASE) {
+        t->selecting = 0;
+        return 1;
+    }
+
+    if (m->action == VUI_MOUSE_MOVE) {
+        // dragging past the top or bottom edge scrolls one line per event; shortcut: only while the mouse keeps moving
+        if (t->selecting && ry < 0) terminal_scroll(t, 1);
+        else if (t->selecting && ry >= (long)t->rows) terminal_scroll(t, -1);
+    }
+
+    t->sel_line[1] = ts_row_id(t->sb_base, t->sb_len, t->scroll, y);
+    t->sel_col[1] = x;
+
+    if (m->action == VUI_MOUSE_PRESS) {
+        t->selecting = 1;
+        t->sel_on = 0;
+        t->sel_line[0] = t->sel_line[1];
+        t->sel_col[0] = x;
+    } else if (t->selecting) {
+        t->sel_on = 1;
+    }
+
+    return 1;
+}
+
+void terminal_paste(VuiTerminal *t)
+{
+    const char *p = vui_clipboard_get();
+    uint32_t *cps = t->fd >= 0 && *p ? malloc((strlen(p) + 1) * sizeof(uint32_t)) : NULL;
+    unsigned int n;
+
+    if (cps == NULL) return;
+    n = vui_utf8_to_cps(p, cps, strlen(p) + 1);
+    t->scroll = 0;
+    vterm_keyboard_start_paste(t->vt);
+
+    // controls other than Tab and Enter are dropped: an ESC in the text must not end a bracketed paste early or start a sequence
+    for (unsigned int i = 0; i < n; i++) {
+        uint32_t c = cps[i] == '\n' ? '\r' : cps[i];
+
+        if (c >= 0x20 || c == '\r' || c == '\t') vterm_keyboard_unichar(t->vt, c, VTERM_MOD_NONE);
+    }
+
+    vterm_keyboard_end_paste(t->vt);
+    free(cps);
 }
 
 static int term_event(VuiNode *node, VuiCtx *ui, const VuiEvent *e)
@@ -172,14 +377,38 @@ static int term_event(VuiNode *node, VuiCtx *ui, const VuiEvent *e)
 
     (void)ui;
 
+    if (e->type == VUI_EVENT_MOUSE) return term_mouse(t, &e->mouse);
+
+    if (e->type == VUI_EVENT_KEY) {
+        const VuiKeyEvent *k = &e->key;
+
+        if (t->on_key != NULL && t->on_key(t, k)) return 1;
+
+        if (k->modifiers == VUI_MOD_SHIFT && !t->altscreen && VUI_TERMINAL_SCROLLBACK > 0) {
+            switch (k->key) {
+            case VUI_KEY_PAGE_UP:   terminal_scroll(t, (int)t->rows > 1 ? (int)t->rows - 1 : 1); return 1;
+            case VUI_KEY_PAGE_DOWN: terminal_scroll(t, -((int)t->rows > 1 ? (int)t->rows - 1 : 1)); return 1;
+            case VUI_KEY_HOME:      terminal_scroll(t, (int)t->sb_len); return 1;
+            case VUI_KEY_END:       terminal_scroll_reset(t); return 1;
+            default: break;
+            }
+        }
+
+        // legacy terminals can't tell Ctrl-Shift-C from Ctrl-C (0x03): that one reaches the program
+        if (k->modifiers == (VUI_MOD_CTRL | VUI_MOD_SHIFT) && k->key == VUI_KEY_CHAR && (k->character == 'c' || k->character == 'v')) {
+            if (k->character == 'c') terminal_copy(t); else terminal_paste(t);
+            return 1;
+        }
+    }
+
     if (t->fd < 0) return 0;
 
     switch (e->type) {
-    case VUI_EVENT_PASTE_START: vterm_keyboard_start_paste(t->vt); return 1;
-    case VUI_EVENT_PASTE_END:   vterm_keyboard_end_paste(t->vt); return 1;
-    case VUI_EVENT_TEXT:        vterm_keyboard_unichar(t->vt, e->text.codepoint, VTERM_MOD_NONE); return 1;
-    case VUI_EVENT_KEY:         break;
-    default:                    return 0; // shortcut: mouse and wheel aren't forwarded, and there is no scrollback
+    case VUI_EVENT_PASTE_START: t->scroll = 0; t->pasting = 1; vterm_keyboard_start_paste(t->vt); return 1;
+    case VUI_EVENT_PASTE_END:   t->pasting = 0; vterm_keyboard_end_paste(t->vt); return 1;
+    case VUI_EVENT_TEXT:        t->scroll = 0; vterm_keyboard_unichar(t->vt, t->pasting && e->text.codepoint == '\n' ? '\r' : e->text.codepoint, VTERM_MOD_NONE); return 1;
+    case VUI_EVENT_KEY:         t->scroll = 0; break;
+    default:                    return 0;
     }
 
     if (e->key.modifiers & VUI_MOD_SHIFT) mod |= VTERM_MOD_SHIFT;
@@ -237,6 +466,13 @@ static int set_prop(VTermProp prop, VTermValue *val, void *user)
     VuiTerminal *t = user;
 
     if (prop == VTERM_PROP_CURSORVISIBLE) t->cursor_visible = val->boolean;
+    if (prop == VTERM_PROP_MOUSE) t->mouse_mode = val->number;
+    if (prop == VTERM_PROP_ALTSCREEN) {
+        t->altscreen = val->boolean;
+        t->scroll = 0;
+        t->sel_on = t->selecting = 0; // screen rows are a different set of lines now
+    }
+
     return 1;
 }
 
@@ -288,7 +524,9 @@ static void term_destroy(VuiNode *node)
     }
 
     vterm_free(t->vt);
+    #if VUI_TERMINAL_SCROLLBACK > 0
     sb_clear(t);
+#endif
     free(t->sb);
 }
 

@@ -32,7 +32,7 @@ VTERM_SRCS := $(wildcard third_party/libvterm/src/*.c)
 VTERM_OBJS := $(patsubst third_party/libvterm/src/%.c,$(BUILD)/vterm/%.o,$(VTERM_SRCS))
 TERM_EXAMPLES :=
 ifeq ($(TARGET),POSIX)
-TERM_SRCS := src/ext/terminal.c $(VTERM_OBJS)
+TERM_SRCS := src/ext/terminal.c src/ext/termsel.c $(VTERM_OBJS)
 TERM_EXAMPLES := $(BUILD)/windows
 $(TERM_EXAMPLES): CFLAGS += -DVUI_TERMINAL
 $(TERM_EXAMPLES): $(TERM_SRCS)
@@ -62,15 +62,21 @@ $(BUILD):
 wintest: build
 	x86_64-w64-mingw32-gcc $(CFLAGS) -Isrc tests/win_watch.c $(SRCS) $(WIN32) -o build/win-watch.exe
 
-test: build
+test: build $(VTERM_OBJS)
 	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c src/scancode.c -o build/input-test
 	build/input-test
 	$(CC) $(CFLAGS) -Isrc tests/winkeys.c src/winkeys.c src/scancode.c src/utf8.c -o build/winkeys-test
 	build/winkeys-test
 	$(CC) $(CFLAGS) -Isrc tests/vtraw.c src/vtraw.c src/scancode.c -o build/vtraw-test
 	build/vtraw-test
+	$(CC) $(CFLAGS) -Isrc tests/termsel.c src/ext/termsel.c -o build/termsel-test
+	build/termsel-test
 	$(CC) $(CFLAGS) tests/widgets.c tests/platform_stub.c $(SRCS) -o build/widgets-test
 	build/widgets-test
+ifeq ($(TARGET),POSIX)
+	$(CC) $(CFLAGS) tests/terminal.c tests/platform_stub.c $(SRCS) $(TERM_SRCS) -o build/terminal-test
+	build/terminal-test
+endif
 
 clean:
 	rm -rf build

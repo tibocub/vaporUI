@@ -708,24 +708,56 @@ void textarea_undo(VuiTextarea *ta);
 void textarea_redo(VuiTextarea *ta);
 
 // A terminal emulator: runs a program on a pty and shows its screen (libvterm). Needs
-// src/ext/terminal.c and third_party/libvterm (POSIX only, see the Makefile's TERMINAL=1).
-// argv: the program and its arguments, NULL-terminated (NULL = $SHELL). Every key goes to
-// the program, Ctrl-C included; Tab too, so F6 / Shift-F6 move focus out. The size follows
-// the node. The vterm is created before the program starts, but the pty is sized on first
-// draw. When the program exits, on_exit is called (the node stays, showing its last screen).
-// Resizing re-wraps the shown lines and keeps up to VUI_TERMINAL_SCROLLBACK scrolled-off lines to bring back
-// when it grows; there is no way to scroll back to them yet, and mouse input isn't forwarded.
-typedef struct {
+// src/ext/terminal.c, src/ext/termsel.c and third_party/libvterm (POSIX only, see the Makefile's TERM_SRCS).
+// argv: the program and its arguments, NULL-terminated (NULL = $SHELL). Keys go to the program, Ctrl-C and
+// Tab included (F6 / Shift-F6 move focus out), except these, which the widget takes first (override them with on_key):
+//   Shift-PageUp/PageDown scroll the view by a page, Shift-Home/End jump to the oldest line / back to live,
+//   Ctrl-Shift-C copies the selection, Ctrl-Shift-V pastes the in-process clipboard (a terminal that sends the
+//   key at all: most keep Ctrl-Shift-C/V for themselves and deliver a paste event instead, which is forwarded).
+// Anything else typed to the program snaps the view back to live. The size follows the node. The vterm is created
+// before the program starts, but the pty is sized on first draw. When the program exits, on_exit is called (the
+// node stays, showing its last screen).
+//
+// Scrollback: up to VUI_TERMINAL_SCROLLBACK scrolled-off lines are kept (0 = none, and no scrolling code is
+// built). They show when the view is scrolled (wheel, keys above, terminal_scroll()) at the width they had:
+// wider lines are cut, narrower ones padded; they don't reflow. The alternate screen (vim, less) has no scrollback.
+// While scrolled back the view stays on the same text as output arrives, and "[n]" shows top right.
+//
+// Mouse: when the program asked for mouse reporting (and Shift isn't held) press / release / drag / wheel go to it.
+// Otherwise the left button selects text (screen and scrollback, cell-wise, no double/triple click) and the wheel
+// scrolls the view. Shift always selects. A selection is copied with terminal_copy() (the in-process clipboard and,
+// through it, the system one via OSC 52).
+#ifndef VUI_TERMINAL_SCROLLBACK
+#define VUI_TERMINAL_SCROLLBACK 200 // lines kept (~60 B per cell: 200 lines of 80 columns is ~1 MB; lower it on small targets)
+#endif
+
+typedef struct VuiTerminal {
     VuiNode node;
     void (*on_exit)(VuiNode *terminal, int status); // status as from waitpid()
+    // Runs before the widget's own key handling; return 1 to consume the key (it then isn't sent to the program).
+    int (*on_key)(struct VuiTerminal *terminal, const VuiKeyEvent *key);
     int fd, pid;
     unsigned int rows, cols;
+    unsigned int scroll;  // read-only: lines the view is scrolled back, 0 = live (see terminal_scroll_offset())
     int cursor_visible;
     struct VTerm *vt;
     struct VTermScreen *screen;
-    void *sb;  // scrollback lines (internal)
-    unsigned int sb_len;
+    // internal
+    void *sb;  // scrollback ring (lines)
+    unsigned int sb_len, sb_head;
+    long sb_base; // lines dropped off the oldest end, so line ids stay stable
+    int mouse_mode, altscreen, pasting, fwd, selecting, sel_on;
+    long sel_line[2]; // selection anchor and head: line id, column
+    int sel_col[2];
 } VuiTerminal;
+
+void terminal_scroll(VuiTerminal *t, int rows);   // + back (up) / - towards live (down); clamped
+void terminal_scroll_reset(VuiTerminal *t);        // back to live
+unsigned int terminal_scroll_offset(const VuiTerminal *t); // same as t->scroll
+size_t terminal_selection_text(const VuiTerminal *t, char *out, size_t size); // UTF-8, lines joined by '\n', trailing blanks trimmed; returns the full length (out may be NULL), "" if nothing selected
+void terminal_selection_clear(VuiTerminal *t);
+void terminal_copy(VuiTerminal *t);                 // selection -> vui_clipboard_set(); no-op without a selection
+void terminal_paste(VuiTerminal *t);                // vui_clipboard_get() -> the program (bracketed if it enabled that)
 
 VuiTerminal *terminal_create(const char *const argv[]);
 
