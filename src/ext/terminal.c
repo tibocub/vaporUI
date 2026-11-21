@@ -1,7 +1,7 @@
 // Terminal widget: a child process on a pty, its output interpreted by libvterm (third_party/libvterm).
-// POSIX (forkpty) and NuttX (/dev/ptmx + posix_spawn: no MMU, no fork); not part of the default
-// build, see the Makefile and vaporOS/vaporui.
-#ifndef __NuttX__
+// POSIX (forkpty), NuttX (/dev/ptmx + posix_spawn: no MMU, no fork) and Windows (ConPTY, loaded at run time so
+// the program still starts on a Windows without it); not part of the default build, see the Makefile and vaporOS/vaporui.
+#if !defined(__NuttX__) && !defined(_WIN32)
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE
 #endif
@@ -11,10 +11,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#else
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#if defined(__NuttX__)
+#endif
+#if defined(_WIN32)
+#elif defined(__NuttX__)
 #include <fcntl.h>
 #include <spawn.h>
 #elif defined(__APPLE__)
@@ -239,6 +246,146 @@ static VuiColor color(VTermScreen *screen, VTermColor c)
     return VUI_RGB(c.rgb.red, c.rgb.green, c.rgb.blue);
 }
 
+#ifdef _WIN32
+// ConPTY (Windows 10 1809+). Looked up at run time: the three functions don't exist before that.
+#ifndef PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE
+#define PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE 0x00020016
+#endif
+
+static long (WINAPI *conpty_create)(COORD, HANDLE, HANDLE, DWORD, void **);
+static long (WINAPI *conpty_resize)(void *, COORD);
+static void (WINAPI *conpty_close)(void *);
+
+static int conpty_load(void)
+{
+    HMODULE k = GetModuleHandleW(L"kernel32.dll");
+
+    if (conpty_create == NULL && k != NULL) {
+        *(FARPROC *)&conpty_create = GetProcAddress(k, "CreatePseudoConsole");
+        *(FARPROC *)&conpty_resize = GetProcAddress(k, "ResizePseudoConsole");
+        *(FARPROC *)&conpty_close = GetProcAddress(k, "ClosePseudoConsole");
+    }
+
+    return conpty_create != NULL && conpty_resize != NULL && conpty_close != NULL;
+}
+
+// argv -> one command line (CreateProcess takes a string): quoted per the MS C runtime rules, in UTF-16
+static WCHAR *command_line(const char *const argv[])
+{
+    size_t cap = 1;
+    WCHAR *out, *o;
+
+    for (int i = 0; argv[i] != NULL; i++) cap += 2 * strlen(argv[i]) * 2 + 4;
+
+    out = o = malloc(cap * sizeof(WCHAR));
+    if (out == NULL) return NULL;
+
+    for (int i = 0; argv[i] != NULL; i++) {
+        const char *a = argv[i];
+        int quote = *a == 0 || strpbrk(a, " \t\"") != NULL;
+        WCHAR *wide = malloc((strlen(a) + 1) * sizeof(WCHAR));
+        int n;
+
+        if (wide == NULL) { free(out); return NULL; }
+        n = MultiByteToWideChar(CP_UTF8, 0, a, -1, wide, (int)strlen(a) + 1) - 1;
+        if (n < 0) n = 0;
+        if (i > 0) *o++ = L' ';
+
+        if (!quote) {
+            memcpy(o, wide, n * sizeof(WCHAR));
+            o += n;
+        } else {
+            // the inverse of CommandLineToArgvW: backslashes only matter before a quote (they double, and the quote is escaped)
+            *o++ = L'"';
+
+            for (int k = 0, slashes = 0;; k++) {
+                if (k < n && wide[k] == L'\\') { slashes++; continue; }
+                if (k == n || wide[k] == L'"') slashes *= 2;
+                while (slashes-- > 0) *o++ = L'\\';
+                slashes = 0;
+                if (k == n) break;
+                if (wide[k] == L'"') *o++ = L'\\';
+                *o++ = wide[k];
+            }
+
+            *o++ = L'"';
+        }
+
+        free(wide);
+    }
+
+    *o = 0;
+    return out;
+}
+
+static int win_spawn(VuiTerminal *t, const char *const argv[])
+{
+    HANDLE in_r, in_w, out_r, out_w;
+    void *pc = NULL;
+    STARTUPINFOEXW si;
+    PROCESS_INFORMATION pi;
+    SIZE_T size = 0;
+    WCHAR *cmd;
+    BOOL ok;
+
+    if (!conpty_load() || (cmd = command_line(argv)) == NULL) return -1;
+
+    // big output buffer: the pseudo console must never wait for us while it is being closed
+    if (!CreatePipe(&in_r, &in_w, NULL, 0) || !CreatePipe(&out_r, &out_w, NULL, 1 << 20)) { free(cmd); return -1; }
+
+    if (conpty_create((COORD){ 80, 24 }, in_r, out_w, 0, &pc) != 0) {
+        CloseHandle(in_r); CloseHandle(in_w); CloseHandle(out_r); CloseHandle(out_w);
+        free(cmd);
+        return -1;
+    }
+
+    CloseHandle(in_r); // the pseudo console has its own duplicates
+    CloseHandle(out_w);
+
+    memset(&si, 0, sizeof(si));
+    si.StartupInfo.cb = sizeof(si);
+    InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+    si.lpAttributeList = malloc(size);
+    ok = si.lpAttributeList != NULL && InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &size)
+         && UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, pc, sizeof(pc), NULL, NULL)
+         && CreateProcessW(NULL, cmd, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &si.StartupInfo, &pi);
+
+    if (si.lpAttributeList != NULL) {
+        DeleteProcThreadAttributeList(si.lpAttributeList);
+        free(si.lpAttributeList);
+    }
+
+    free(cmd);
+
+    if (!ok) {
+        conpty_close(pc);
+        CloseHandle(in_w);
+        CloseHandle(out_r);
+        return -1;
+    }
+
+    CloseHandle(pi.hThread);
+    t->proc = pi.hProcess;
+    t->pcon = pc;
+    t->pid = (int)pi.dwProcessId;
+    t->fd = _open_osfhandle((intptr_t)out_r, _O_RDONLY | _O_BINARY);
+    t->wfd = _open_osfhandle((intptr_t)in_w, _O_WRONLY | _O_BINARY);
+    return t->fd >= 0 && t->wfd >= 0 ? 0 : -1;
+}
+#endif
+
+static void set_winsize(VuiTerminal *t)
+{
+    if (t->fd < 0) return;
+#ifdef _WIN32
+    if (t->pcon != NULL) conpty_resize(t->pcon, (COORD){ (SHORT)t->cols, (SHORT)t->rows });
+#else
+    struct winsize ws = { .ws_row = t->rows, .ws_col = t->cols };
+
+    ioctl(t->fd, TIOCSWINSZ, &ws);
+#endif
+}
+
 static void term_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 {
     VuiTerminal *t = (VuiTerminal *)node;
@@ -250,13 +397,11 @@ static void term_draw(VuiNode *node, VuiScreen *scr, void *userdata)
 
     // follow the node's size: the vterm and the child's idea of the window must match what we show
     if (r.width > 0 && r.height > 0 && (r.width != t->cols || r.height != t->rows)) {
-        struct winsize ws = { .ws_row = r.height, .ws_col = r.width };
-
         t->cols = r.width;
         t->rows = r.height;
         t->sel_on = t->selecting = 0; // rows re-wrap: the selection's lines no longer match
         vterm_set_size(t->vt, t->rows, t->cols);
-        if (t->fd >= 0) ioctl(t->fd, TIOCSWINSZ, &ws);
+        set_winsize(t);
     }
 
     scr_fill(scr, r, ' ', blank);
@@ -527,7 +672,7 @@ static void to_child(const char *s, size_t len, void *user)
     VuiTerminal *t = user;
 
     while (t->fd >= 0 && len > 0) {
-        ssize_t n = write(t->fd, s, len);
+        ssize_t n = write(t->wfd, s, len);
 
         if (n < 0 && errno == EINTR) continue;
         if (n <= 0) break; // shortcut: a full pty buffer drops the input, when a child stops reading
@@ -553,17 +698,66 @@ static int set_prop(VTermProp prop, VTermValue *val, void *user)
 
 static const VTermScreenCallbacks screen_cb = { .settermprop = set_prop, .sb_pushline4 = sb_push, .sb_popline = sb_pop, .sb_clear = sb_clear };
 
+#ifdef _WIN32
+// The output pipe stays open until the pseudo console is closed, so a program exiting is noticed by polling for it.
+static void win_drain(VuiTerminal *t)
+{
+    HANDLE h = (HANDLE)_get_osfhandle(t->fd);
+    DWORD avail = 0;
+    char buf[4096];
+
+    while (PeekNamedPipe(h, NULL, 0, NULL, &avail, NULL) && avail > 0) {
+        int n = read(t->fd, buf, sizeof(buf));
+
+        if (n <= 0) break;
+        vterm_input_write(t->vt, buf, n);
+    }
+
+    vterm_screen_flush_damage(t->screen);
+}
+#endif
+
 static void child_gone(VuiTerminal *t)
 {
     int status = 0;
 
+#ifdef _WIN32
+    DWORD code = 0;
+
+    if (t->exit_timer != 0) vui_timer_cancel(vui_ctx(), t->exit_timer);
+    t->exit_timer = 0;
+    vui_unwatch_fd(vui_ctx(), t->fd);
+    win_drain(t);
+    if (t->pcon != NULL) conpty_close(t->pcon); // flushes what the program wrote last
+    win_drain(t);
+    WaitForSingleObject(t->proc, 1000);
+    GetExitCodeProcess(t->proc, &code);
+    status = (int)(code & 0xff) << 8;
+    CloseHandle(t->proc);
+    t->proc = t->pcon = NULL;
+    close(t->fd);
+    close(t->wfd);
+    t->fd = t->wfd = -1;
+    t->pid = 0;
+#else
     vui_unwatch_fd(vui_ctx(), t->fd);
     close(t->fd);
     t->fd = -1;
     waitpid(t->pid, &status, 0);
     t->pid = 0;
+#endif
     if (t->on_exit != NULL) t->on_exit(&t->node, status);
 }
+
+#ifdef _WIN32
+static void exit_poll(VuiCtx *ui, void *user)
+{
+    VuiTerminal *t = user;
+
+    (void)ui;
+    if (t->proc != NULL && WaitForSingleObject(t->proc, 0) == WAIT_OBJECT_0) child_gone(t);
+}
+#endif
 
 static void from_child(VuiCtx *ui, int fd, void *user)
 {
@@ -577,7 +771,7 @@ static void from_child(VuiCtx *ui, int fd, void *user)
         vterm_input_write(t->vt, buf, n);
         vterm_screen_flush_damage(t->screen);
     } else if (n == 0 || (errno != EINTR && errno != EAGAIN)) {
-        child_gone(t);
+        child_gone(t); // (Windows: only when the pipe broke before the exit poll noticed)
     }
 }
 
@@ -585,6 +779,18 @@ static void term_destroy(VuiNode *node)
 {
     VuiTerminal *t = (VuiTerminal *)node;
 
+#ifdef _WIN32
+    if (t->exit_timer != 0) vui_timer_cancel(vui_ctx(), t->exit_timer);
+
+    if (t->fd >= 0) {
+        vui_unwatch_fd(vui_ctx(), t->fd);
+        if (t->proc != NULL) TerminateProcess(t->proc, 1);
+        if (t->pcon != NULL) conpty_close(t->pcon);
+        if (t->proc != NULL) CloseHandle(t->proc);
+        close(t->fd);
+        close(t->wfd);
+    }
+#else
     if (t->fd >= 0) {
         vui_unwatch_fd(vui_ctx(), t->fd);
         close(t->fd);
@@ -597,6 +803,7 @@ static void term_destroy(VuiNode *node)
         waitpid(t->pid, NULL, 0); // shortcut: a child ignoring SIGHUP blocks here, when that matters send SIGKILL after a timeout
 #endif
     }
+#endif
 
     if (t->drag_timer != 0) vui_timer_cancel(vui_ctx(), t->drag_timer);
     vterm_free(t->vt);
@@ -609,8 +816,12 @@ static void term_destroy(VuiNode *node)
 VuiTerminal *terminal_create(const char *const argv[])
 {
     VuiTerminal *t = (VuiTerminal *)node_alloc(sizeof(VuiTerminal));
+#ifdef _WIN32
+    const char *sh[] = { getenv("COMSPEC") ? getenv("COMSPEC") : "cmd.exe", NULL };
+#else
     struct winsize ws = { .ws_row = 24, .ws_col = 80 };
     const char *sh[] = { getenv("SHELL") ? getenv("SHELL") : "/bin/sh", NULL };
+#endif
 
     if (t == NULL) return NULL;
     if (argv == NULL) argv = sh;
@@ -634,9 +845,15 @@ VuiTerminal *terminal_create(const char *const argv[])
     vterm_screen_enable_reflow(t->screen, 1); // a resize re-wraps the rows that are shown
     vterm_screen_reset(t->screen, 1);
 
+#ifdef _WIN32
+    t->fd = t->wfd = -1;
+    t->pid = win_spawn(t, argv) == 0 ? t->pid : -1;
+#else
     setenv("TERM", "xterm-256color", 1);
+#endif
 
-#ifdef __NuttX__
+#if defined(_WIN32)
+#elif defined(__NuttX__)
     {
         char slave[32];
         posix_spawn_file_actions_t fa;
@@ -670,8 +887,17 @@ VuiTerminal *terminal_create(const char *const argv[])
     }
 #endif
 
+#ifndef _WIN32
+    t->wfd = t->fd;
+#endif
+
     if (t->pid < 0) {
-        t->fd = -1;
+#ifdef _WIN32
+        if (t->fd >= 0) close(t->fd); // a half-made pair
+        if (t->wfd >= 0) close(t->wfd);
+        t->proc = t->pcon = NULL;
+#endif
+        t->fd = t->wfd = -1;
         t->node.destroy = term_destroy; // frees the vterm
         node_destroy(&t->node);
         return NULL;
@@ -684,5 +910,8 @@ VuiTerminal *terminal_create(const char *const argv[])
     t->node.wants_tab = 1;
     t->node.grow = 1;
     vui_watch_fd(vui_ctx(), t->fd, from_child, t);
+#ifdef _WIN32
+    t->exit_timer = vui_timer(vui_ctx(), 100, 1, exit_poll, t);
+#endif
     return t;
 }

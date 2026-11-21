@@ -27,19 +27,19 @@ endif
 SRCS := $(wildcard src/*.c src/widgets/*.c)
 EXAMPLES := $(patsubst examples/%.c,$(BUILD)/%$(EXE),$(filter-out $(SKIP),$(wildcard examples/*.c)))
 
-# terminal widget (POSIX only): libvterm is built once into objects and linked into the examples that use it
+# terminal widget (POSIX, and Windows through ConPTY): libvterm is built once into objects and linked into the examples that use it
 VTERM_SRCS := $(wildcard third_party/libvterm/src/*.c)
 VTERM_OBJS := $(patsubst third_party/libvterm/src/%.c,$(BUILD)/vterm/%.o,$(VTERM_SRCS))
 TERM_EXAMPLES :=
-ifeq ($(TARGET),POSIX)
+ifneq ($(filter POSIX WIN32,$(TARGET)),)
 TERM_SRCS := src/ext/terminal.c src/ext/termsel.c $(VTERM_OBJS)
-TERM_EXAMPLES := $(BUILD)/windows
+TERM_EXAMPLES := $(BUILD)/windows$(EXE)
 $(TERM_EXAMPLES): CFLAGS += -DVUI_TERMINAL
 $(TERM_EXAMPLES): $(TERM_SRCS)
 endif
 
 .DEFAULT_GOAL := all
-.PHONY: all test clean
+.PHONY: all test clean winterm
 
 # every example builds; they double as manual regression checks (see
 # the header comment of each one for what to verify)
@@ -61,6 +61,16 @@ $(BUILD):
 # Windows backend check (needs wine or a Windows console): make wintest && wine build/win-watch.exe
 wintest: build
 	x86_64-w64-mingw32-gcc $(CFLAGS) -Isrc tests/win_watch.c $(SRCS) $(WIN32) -o build/win-watch.exe
+
+# Windows terminal widget (ConPTY) check: make winterm, run build/win-term.exe (Wine can't run ConPTY output, see the test)
+WINVTERM_OBJS := $(patsubst third_party/libvterm/src/%.c,build/winvterm/%.o,$(VTERM_SRCS))
+
+build/winvterm/%.o: third_party/libvterm/src/%.c
+	mkdir -p build/winvterm
+	x86_64-w64-mingw32-gcc -O1 -w -Ithird_party/libvterm/include -c $< -o $@
+
+winterm: build $(WINVTERM_OBJS)
+	x86_64-w64-mingw32-gcc $(CFLAGS) -Isrc tests/win_term.c tests/platform_stub.c $(SRCS) src/ext/terminal.c src/ext/termsel.c $(WINVTERM_OBJS) -o build/win-term.exe
 
 test: build $(VTERM_OBJS)
 	$(CC) $(CFLAGS) -Isrc tests/input.c src/input.c src/vt.c src/utf8.c src/scancode.c -o build/input-test

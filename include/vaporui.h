@@ -718,7 +718,8 @@ void textarea_undo(VuiTextarea *ta);
 void textarea_redo(VuiTextarea *ta);
 
 // A terminal emulator: runs a program on a pty and shows its screen (libvterm). Needs
-// src/ext/terminal.c, src/ext/termsel.c and third_party/libvterm (POSIX only, see the Makefile's TERM_SRCS).
+// src/ext/terminal.c, src/ext/termsel.c and third_party/libvterm (see the Makefile's TERM_SRCS). POSIX (forkpty), NuttX
+// (/dev/ptmx) and Windows 10 1809+ (ConPTY; terminal_create() returns NULL on an older one).
 // argv: the program and its arguments, NULL-terminated (NULL = $SHELL). Keys go to the program, Ctrl-C and
 // Tab included (F6 / Shift-F6 move focus out), except these, which the widget takes first (override them with on_key):
 //   Shift-PageUp/PageDown scroll the view by a page, Shift-Home/End jump to the oldest line / back to live,
@@ -726,7 +727,7 @@ void textarea_redo(VuiTextarea *ta);
 //   key at all: most keep Ctrl-Shift-C/V for themselves and deliver a paste event instead, which is forwarded).
 // Anything else typed to the program snaps the view back to live. The size follows the node. The vterm is created
 // before the program starts, but the pty is sized on first draw. When the program exits, on_exit is called (the
-// node stays, showing its last screen).
+// node stays, showing its last screen); status is waitpid()'s, on Windows the exit code shifted like it (WEXITSTATUS-style, low byte only).
 //
 // Scrollback: up to VUI_TERMINAL_SCROLLBACK scrolled-off lines are kept (0 = none, and no scrolling code is
 // built). They show when the view is scrolled (wheel, keys above, terminal_scroll()) at the width they had:
@@ -747,13 +748,15 @@ typedef struct VuiTerminal {
     void (*on_exit)(VuiNode *terminal, int status); // status as from waitpid()
     // Runs before the widget's own key handling; return 1 to consume the key (it then isn't sent to the program).
     int (*on_key)(struct VuiTerminal *terminal, const VuiKeyEvent *key);
-    int fd, pid;
+    int fd, pid;          // fd: the pty master, or on Windows the read end of the ConPTY output pipe; pid: 0 once exited
     unsigned int rows, cols;
     unsigned int scroll;  // read-only: lines the view is scrolled back, 0 = live (see terminal_scroll_offset())
     int cursor_visible;
     struct VTerm *vt;
     struct VTermScreen *screen;
     // internal
+    int wfd, exit_timer;      // where input is written (== fd except on Windows), Windows: timer polling for the exit
+    void *proc, *pcon;        // Windows: process handle, pseudo console
     void *sb;  // scrollback ring (lines)
     unsigned int sb_len, sb_head;
     long sb_base; // lines dropped off the oldest end, so line ids stay stable
