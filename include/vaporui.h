@@ -393,7 +393,7 @@ VuiNode *node_create(void);
 // For custom nodes: embed VuiNode as the first member of your struct
 // and allocate with node_alloc(sizeof(MyNode)); node_destroy() frees it.
 VuiNode *node_alloc(size_t size);
-void node_destroy(VuiNode *node); // frees the whole subtree
+void node_destroy(VuiNode *node); // frees the whole subtree; a node still in a parent is removed from it first
 
 void node_pad(VuiNode *node, unsigned int top, unsigned int right, unsigned int bottom, unsigned int left);
 void node_add(VuiNode *parent, VuiNode *child);
@@ -528,7 +528,7 @@ typedef enum {
 
 typedef struct {
     VuiNode node;
-    const char *title; // may be NULL
+    const char *title; // may be NULL; NOT copied: the string must outlive the border (and stay put if you reorder your own arrays)
     VuiBorderStyle border;
     VuiStyle style;
 } VuiBorder;
