@@ -42,12 +42,28 @@ Callbacks receive the widget's `VuiNode *`; use `node->userdata` for your own st
 - Content widgets default to `basis = VUI_AUTO` and set `node.measure`.
 - Add or extend an example, and a case in `tests/widgets.c` for non-trivial logic.
 
-## Terminal (optional, POSIX only)
+## Terminal (optional: POSIX, NuttX, Windows)
 `terminal_create(argv)` runs a program (NULL = `$SHELL`) on a pty and draws its screen, using the vendored
 libvterm (`third_party/libvterm`). It lives outside the default sources: `src/ext/terminal.c` plus the
 libvterm objects (see the Makefile, which links them into the `windows` example and defines `VUI_TERMINAL`).
 Every key goes to the program (Ctrl-C and Tab included); F6 / Shift-F6 move focus out. The pty follows the
-node's size; `on_exit` fires when the program ends. Resizing re-wraps the shown rows (libvterm reflow) and keeps up to `VUI_TERMINAL_SCROLLBACK` (200) scrolled-off lines, which come back when the window grows (a too-wide line in pieces); lines that were split by a shrink are not re-joined when it grows again. Not done: scrolling back to them, mouse forwarding, combining marks.
+node's size; `on_exit` fires when the program ends. Resizing re-wraps the shown rows (libvterm reflow) and keeps up to `VUI_TERMINAL_SCROLLBACK` (200) scrolled-off lines, which come back when the window grows (a too-wide line in pieces); lines that were split by a shrink are not re-joined when it grows again. Not done: combining marks (dropped when drawing).
+
+Scrollback view: wheel (when the program didn't ask for the mouse), Shift-PageUp/PageDown, Shift-Home/End, or `terminal_scroll(t, rows)` / `terminal_scroll_reset(t)` / `terminal_scroll_offset(t)` (`t->scroll`). Typing to the program snaps back to live; new output keeps the view on the same text. Stored lines are shown at their own width (cut / padded, no reflow); the alternate screen has none. `VUI_TERMINAL_SCROLLBACK` is a compile-time knob (0 = no scrollback code). The ring costs O(1) per scrolled line.
+
+Mouse: if the program enabled mouse reporting (and Shift isn't held), press / release / drag / wheel are forwarded. Otherwise left-drag selects (cell-wise, across scrollback; double click = word, triple click = the program's whole line, wrapped rows included; dragging past the top or bottom edge keeps scrolling; soft-wrapped lines copy joined), drawn inverted; `terminal_selection_text(t, out, size)` reads it (returns the full length, `out` may be NULL), `terminal_copy(t)` puts it on the clipboard (and OSC 52), `terminal_selection_clear(t)`.
+
+Paste: a paste event (the host terminal's Ctrl-Shift-V) is forwarded, bracketed if the program enabled bracketed paste (libvterm does that), otherwise as plain text (newline as Enter). `terminal_paste(t)` pastes the in-process clipboard the same way (control characters stripped). There is no way to read the *system* clipboard from a terminal or the Linux VT / Windows console backends, so Ctrl-Shift-V inside vaporUI pastes only what was copied by this process; hosts that deliver a paste event give you the system clipboard for free.
+
+Keys: `t->on_key(t, key)` runs before the widget's own handling (return 1 = consumed, not sent to the program); the defaults are Shift-PageUp/PageDown/Home/End (scroll) and Ctrl-Shift-C/V (copy/paste), so an app can rebind them by consuming its own keys, or by consuming these ones. Ctrl-Shift-C/V never reach the program, but a terminal without modifyOtherKeys / kitty sends Ctrl-Shift-C as Ctrl-C (0x03), which can't be told apart.
+On Windows (10 1809+) it uses ConPTY: `CreatePseudoConsole` is looked up at run time, so the program still starts on an older Windows
+and `terminal_create` returns NULL there. `argv` NULL = `%COMSPEC%`; arguments are quoted into one command line. The output pipe stays open
+until the pseudo console is closed, so the exit is noticed by a 100 ms timer; `on_exit`'s status is the exit code's low byte shifted like
+`waitpid()`'s (`WEXITSTATUS(status)` works). Output arrives through the 10 ms pipe poll of the event loop. Sources: `src/ext/terminal.c`,
+`termsel.c` and the libvterm objects (`make TARGET=WIN32 CC=x86_64-w64-mingw32-gcc` links them into `windows.exe`; `make winterm` builds
+`tests/win_term.c`, a smoke test). Wine's ConPTY writes the program's screen to Wine's own stdout instead of our pipe, so under Wine only the
+exit path is checked: the drawing, resize and typing paths need a real Windows console.
+
 On NuttX (no MMU, so no `fork`) it opens `/dev/ptmx` and `posix_spawn`s the program: needs `CONFIG_PSEUDOTERM`,
 enabled by vaporOS's `vaporui-terminal` feature (sim-nsh). libvterm keeps ~40 B per cell (twice with the alternate
 screen), so it is not meant for the RP2040. Not for wasm / Windows.

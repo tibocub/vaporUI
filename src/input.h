@@ -39,4 +39,8 @@ int vui_input_pending_escape(const VuiInputDecoder *decoder);
 // true: gives up on the sequence and reports a standalone Escape.
 VuiEvent vui_input_timeout(VuiInputDecoder *decoder);
 
+// Set by the backend: the keyboard layout name the OS reports ("fr", "us", "fr(oss)"...), or NULL when it can't tell.
+// vui_set_layout(NULL) uses it when $VUI_LAYOUT is not set.
+extern const char *(*vui_layout_hook)(void);
+
 #endif

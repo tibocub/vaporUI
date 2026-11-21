@@ -98,10 +98,20 @@ typedef struct {
     // Bind `character` for "the key labelled Q", `base` for "the key in the number row". See vui_set_layout().
     VuiCodepoint base;
     VuiScancode scancode; // the physical key (exact where the platform knows it, else derived from `base`, 0 if unknown)
+    unsigned char repeat;  // 1: auto-repeat of a key already held (raw backends: Linux VT, Windows console; 0 elsewhere)
+    // 1: the key went up. Only with vui_set_key_release(1), and only where the platform sees key releases (Linux VT,
+    // Windows console; terminals don't report them). `modifiers` is then what is held after the event; a release of a
+    // modifier key has key == VUI_KEY_NONE and its `scancode` (VUI_SC_LALT...). vui_dispatch() ignores these events,
+    // so widgets never see them: read them from vui_next_event() / the vui_run handler.
+    unsigned char release;
 } VuiKeyEvent;
 
+// Opt in to key release events, and to KEY events with key == VUI_KEY_NONE for a modifier going down or up. Off by default.
+void vui_set_key_release(int on);
+
 // The keyboard layout, for terminals that can't tell which physical key was pressed (most can't: kitty, foot,
-// WezTerm, Ghostty and Alacritty can). "us" (the default), "fr". NULL or "" = $VUI_LAYOUT, then "us". Returns -1
+// WezTerm, Ghostty and Alacritty can). "us" (the default), "fr", "de", "es", "it", "gb". NULL or "" = $VUI_LAYOUT, then what the OS says it is (Linux: X/GNOME/console
+// settings, Windows: the active keyboard layout), then "us". Returns -1
 // for a layout vaporUI doesn't know (nothing changes). Call it before reading events.
 int vui_set_layout(const char *name);
 
@@ -277,6 +287,7 @@ VuiTheme *vui_theme(void);
 VuiScreen *vui_screen(VuiCtx *ui);
 
 VuiScreen *scr_create(unsigned int width, unsigned int height);
+void scr_toggle_reverse(VuiScreen *scr, unsigned int x, unsigned int y); // flips reverse video on one cell (a software mouse pointer)
 void scr_destroy(VuiScreen *scr);
 void scr_resize(VuiScreen *scr, unsigned int width, unsigned int height);
 
@@ -392,7 +403,7 @@ VuiNode *node_create(void);
 // For custom nodes: embed VuiNode as the first member of your struct
 // and allocate with node_alloc(sizeof(MyNode)); node_destroy() frees it.
 VuiNode *node_alloc(size_t size);
-void node_destroy(VuiNode *node); // frees the whole subtree
+void node_destroy(VuiNode *node); // frees the whole subtree; a node still in a parent is removed from it first
 
 void node_pad(VuiNode *node, unsigned int top, unsigned int right, unsigned int bottom, unsigned int left);
 void node_add(VuiNode *parent, VuiNode *child);
@@ -527,7 +538,7 @@ typedef enum {
 
 typedef struct {
     VuiNode node;
-    const char *title; // may be NULL
+    const char *title; // may be NULL; NOT copied: the string must outlive the border (and stay put if you reorder your own arrays)
     VuiBorderStyle border;
     VuiStyle style;
 } VuiBorder;
@@ -707,24 +718,62 @@ void textarea_undo(VuiTextarea *ta);
 void textarea_redo(VuiTextarea *ta);
 
 // A terminal emulator: runs a program on a pty and shows its screen (libvterm). Needs
-// src/ext/terminal.c and third_party/libvterm (POSIX only, see the Makefile's TERMINAL=1).
-// argv: the program and its arguments, NULL-terminated (NULL = $SHELL). Every key goes to
-// the program, Ctrl-C included; Tab too, so F6 / Shift-F6 move focus out. The size follows
-// the node. The vterm is created before the program starts, but the pty is sized on first
-// draw. When the program exits, on_exit is called (the node stays, showing its last screen).
-// Resizing re-wraps the shown lines and keeps up to VUI_TERMINAL_SCROLLBACK scrolled-off lines to bring back
-// when it grows; there is no way to scroll back to them yet, and mouse input isn't forwarded.
-typedef struct {
+// src/ext/terminal.c, src/ext/termsel.c and third_party/libvterm (see the Makefile's TERM_SRCS). POSIX (forkpty), NuttX
+// (/dev/ptmx) and Windows 10 1809+ (ConPTY; terminal_create() returns NULL on an older one).
+// argv: the program and its arguments, NULL-terminated (NULL = $SHELL). Keys go to the program, Ctrl-C and
+// Tab included (F6 / Shift-F6 move focus out), except these, which the widget takes first (override them with on_key):
+//   Shift-PageUp/PageDown scroll the view by a page, Shift-Home/End jump to the oldest line / back to live,
+//   Ctrl-Shift-C copies the selection, Ctrl-Shift-V pastes the in-process clipboard (a terminal that sends the
+//   key at all: most keep Ctrl-Shift-C/V for themselves and deliver a paste event instead, which is forwarded).
+// Anything else typed to the program snaps the view back to live. The size follows the node. The vterm is created
+// before the program starts, but the pty is sized on first draw. When the program exits, on_exit is called (the
+// node stays, showing its last screen); status is waitpid()'s, on Windows the exit code shifted like it (WEXITSTATUS-style, low byte only).
+//
+// Scrollback: up to VUI_TERMINAL_SCROLLBACK scrolled-off lines are kept (0 = none, and no scrolling code is
+// built). They show when the view is scrolled (wheel, keys above, terminal_scroll()) at the width they had:
+// wider lines are cut, narrower ones padded; they don't reflow. The alternate screen (vim, less) has no scrollback.
+// While scrolled back the view stays on the same text as output arrives, and "[n]" shows top right.
+//
+// Mouse: when the program asked for mouse reporting (and Shift isn't held) press / release / drag / wheel go to it.
+// Otherwise the left button selects text (screen and scrollback, cell-wise; double click = word, triple = the whole
+// program line even if it wrapped) and the wheel
+// scrolls the view. Shift always selects. A selection is copied with terminal_copy() (the in-process clipboard and,
+// through it, the system one via OSC 52).
+#ifndef VUI_TERMINAL_SCROLLBACK
+#define VUI_TERMINAL_SCROLLBACK 200 // lines kept (~60 B per cell: 200 lines of 80 columns is ~1 MB; lower it on small targets)
+#endif
+
+typedef struct VuiTerminal {
     VuiNode node;
     void (*on_exit)(VuiNode *terminal, int status); // status as from waitpid()
-    int fd, pid;
+    // Runs before the widget's own key handling; return 1 to consume the key (it then isn't sent to the program).
+    int (*on_key)(struct VuiTerminal *terminal, const VuiKeyEvent *key);
+    int fd, pid;          // fd: the pty master, or on Windows the read end of the ConPTY output pipe; pid: 0 once exited
     unsigned int rows, cols;
+    unsigned int scroll;  // read-only: lines the view is scrolled back, 0 = live (see terminal_scroll_offset())
     int cursor_visible;
     struct VTerm *vt;
     struct VTermScreen *screen;
-    void *sb;  // scrollback lines (internal)
-    unsigned int sb_len;
+    // internal
+    int wfd, exit_timer;      // where input is written (== fd except on Windows), Windows: timer polling for the exit
+    void *proc, *pcon;        // Windows: process handle, pseudo console
+    void *sb;  // scrollback ring (lines)
+    unsigned int sb_len, sb_head;
+    long sb_base; // lines dropped off the oldest end, so line ids stay stable
+    int mouse_mode, altscreen, pasting, fwd, selecting, sel_on;
+    uint64_t click_ms; // double / triple click tracking, and the edge-drag scroll timer
+    int clicks, click_x, click_y, drag_dir, drag_x, drag_timer;
+    long sel_line[2]; // selection anchor and head: line id, column
+    int sel_col[2];
 } VuiTerminal;
+
+void terminal_scroll(VuiTerminal *t, int rows);   // + back (up) / - towards live (down); clamped
+void terminal_scroll_reset(VuiTerminal *t);        // back to live
+unsigned int terminal_scroll_offset(const VuiTerminal *t); // same as t->scroll
+size_t terminal_selection_text(const VuiTerminal *t, char *out, size_t size); // UTF-8, lines joined by '\n', trailing blanks trimmed; returns the full length (out may be NULL), "" if nothing selected
+void terminal_selection_clear(VuiTerminal *t);
+void terminal_copy(VuiTerminal *t);                 // selection -> vui_clipboard_set(); no-op without a selection
+void terminal_paste(VuiTerminal *t);                // vui_clipboard_get() -> the program (bracketed if it enabled that)
 
 VuiTerminal *terminal_create(const char *const argv[]);
 

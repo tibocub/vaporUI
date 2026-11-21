@@ -305,6 +305,8 @@ void vui_render(VuiCtx *ui, VuiNode *root)
         node_draw(n, vui_screen(ui));
     }
 
+    if (vui_soft_pointer && ui->ptr_on) scr_toggle_reverse(vui_screen(ui), ui->ptr_x, ui->ptr_y);
+
     vui_flush(ui);
 }
 
@@ -330,6 +332,9 @@ int vui_dispatch(VuiCtx *ui, VuiNode *root, const VuiEvent *event)
 {
     VuiNode *target, *handler;
     int modal, hit_overlay = -1;
+
+    // key releases and bare modifiers (vui_set_key_release) are for the app's own loop, never for widgets
+    if (event->type == VUI_EVENT_KEY && (event->key.release || event->key.key == VUI_KEY_NONE)) return 0;
 
     ui->root = root;
     vui_overlays_free(ui);
@@ -494,6 +499,11 @@ VuiEvent vui_next_event(VuiCtx *ui, VuiNode *root)
         ui->frame_wait = -1;
 
         if (event.type != VUI_EVENT_NONE) {
+            if (event.type == VUI_EVENT_MOUSE && vui_soft_pointer) {
+                ui->ptr_on = 1;
+                ui->ptr_x = event.mouse.x;
+                ui->ptr_y = event.mouse.y;
+            }
             ui->dirty = 1;
             return event;
         }

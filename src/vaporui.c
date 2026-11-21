@@ -14,6 +14,8 @@ void vui_platform_set_mouse(int level);
 
 static VuiCtx *the_ui;
 
+int vui_soft_pointer;
+
 VuiCtx *vui_ctx(void)
 {
     return the_ui;

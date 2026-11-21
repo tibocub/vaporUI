@@ -206,17 +206,77 @@ static const LayoutKey fr_keys[] = {
     { 0, 0, 0 }
 };
 
+// QWERTZ: Y and Z swap, the digit row's Shift characters and the punctuation move. Dead keys (acute, circumflex...) have no entry.
+static const LayoutKey de_keys[] = {
+    { '!', '1', 1 }, { '"', '2', 1 }, { 0xA7, '3', 1 }, { '$', '4', 1 }, { '%', '5', 1 }, { '&', '6', 1 }, { '/', '7', 1 },
+    { '(', '8', 1 }, { ')', '9', 1 }, { '=', '0', 1 }, { 0xDF, '-', 0 }, { '?', '-', 1 },
+    { 0xFC, '[', 0 }, { '+', ']', 0 }, { '*', ']', 1 }, { '#', '\\', 0 }, { '\'', '\\', 1 },
+    { 0xF6, ';', 0 }, { 0xE4, '\'', 0 }, { ';', ',', 1 }, { ':', '.', 1 }, { '-', '/', 0 }, { '_', '/', 1 }, { 0xB0, '`', 1 },
+    { 'y', 'z', 0 }, { 'z', 'y', 0 },
+    { 0, 0, 0 }
+};
+
+static const LayoutKey es_keys[] = {
+    { '!', '1', 1 }, { '"', '2', 1 }, { 0xB7, '3', 1 }, { '$', '4', 1 }, { '%', '5', 1 }, { '&', '6', 1 }, { '/', '7', 1 },
+    { '(', '8', 1 }, { ')', '9', 1 }, { '=', '0', 1 }, { '\'', '-', 0 }, { '?', '-', 1 }, { 0xA1, '=', 0 }, { 0xBF, '=', 1 },
+    { '^', '[', 1 }, { '+', ']', 0 }, { '*', ']', 1 }, { 0xE7, '\\', 0 }, { 0xF1, ';', 0 },
+    { ';', ',', 1 }, { ':', '.', 1 }, { '-', '/', 0 }, { '_', '/', 1 }, { 0xBA, '`', 0 },
+    { 0, 0, 0 }
+};
+
+static const LayoutKey it_keys[] = {
+    { '!', '1', 1 }, { '"', '2', 1 }, { 0xA3, '3', 1 }, { '$', '4', 1 }, { '%', '5', 1 }, { '&', '6', 1 }, { '/', '7', 1 },
+    { '(', '8', 1 }, { ')', '9', 1 }, { '=', '0', 1 }, { '\'', '-', 0 }, { '?', '-', 1 }, { 0xEC, '=', 0 }, { '^', '=', 1 },
+    { 0xE8, '[', 0 }, { 0xE9, '[', 1 }, { '+', ']', 0 }, { '*', ']', 1 }, { 0xF9, '\\', 0 }, { 0xA7, '\\', 1 },
+    { 0xF2, ';', 0 }, { 0xE7, ';', 1 }, { 0xE0, '\'', 0 }, { 0xB0, '\'', 1 },
+    { ';', ',', 1 }, { ':', '.', 1 }, { '-', '/', 0 }, { '_', '/', 1 }, { '\\', '`', 0 }, { '|', '`', 1 },
+    { 0, 0, 0 }
+};
+
+// British: the digit row's Shift characters, '@' and '"' swapped with US; '#' and '~' sit on the extra ISO key, left to their own base
+static const LayoutKey gb_keys[] = {
+    { '!', '1', 1 }, { '"', '2', 1 }, { 0xA3, '3', 1 }, { '$', '4', 1 }, { '%', '5', 1 }, { '^', '6', 1 }, { '&', '7', 1 },
+    { '*', '8', 1 }, { '(', '9', 1 }, { ')', '0', 1 }, { '_', '-', 1 }, { '+', '=', 1 }, { '{', '[', 1 }, { '}', ']', 1 },
+    { ':', ';', 1 }, { '@', '\'', 1 }, { '<', ',', 1 }, { '>', '.', 1 }, { '?', '/', 1 }, { 0xAC, '`', 1 },
+    { 0, 0, 0 }
+};
+
 static const LayoutKey *layout = us_keys;
 static int layout_chosen;
 
+const char *(*vui_layout_hook)(void);
+
+// "fr", "fr-latin9", "fr(oss)", "fr+oss", "us,fr" -> the table; NULL for a layout we have no table for ("fr_CH", "ru")
+static const LayoutKey *layout_named(const char *name)
+{
+    char token[8];
+    size_t n = strcspn(name, "(+,:-");
+
+    if (n == 0 || n >= sizeof(token)) return NULL;
+    memcpy(token, name, n);
+    token[n] = '\0';
+
+    if (!strcmp(token, "us")) return us_keys;
+    if (!strcmp(token, "fr")) return fr_keys;
+    if (!strcmp(token, "de")) return de_keys;
+    if (!strcmp(token, "es")) return es_keys;
+    if (!strcmp(token, "it")) return it_keys;
+    if (!strcmp(token, "gb")) return gb_keys;
+    return NULL;
+}
+
 int vui_set_layout(const char *name)
 {
+    const LayoutKey *found;
+    int detected = 0;
+
     if (name == NULL || *name == '\0') name = getenv("VUI_LAYOUT");
+    if ((name == NULL || *name == '\0') && vui_layout_hook != NULL) name = vui_layout_hook(), detected = 1;
 
-    if (name == NULL || *name == '\0' || !strcmp(name, "us")) layout = us_keys;
-    else if (!strcmp(name, "fr")) layout = fr_keys;
-    else return -1;
+    if (name == NULL || *name == '\0') found = us_keys;
+    else if ((found = layout_named(name)) == NULL && !detected) return -1;
 
+    layout = found != NULL ? found : us_keys;
     layout_chosen = 1;
     return 0;
 }

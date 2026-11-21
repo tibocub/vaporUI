@@ -21,6 +21,11 @@
 //    Shift, plus the Shift flag, plus the physical key (scancode) and its US position (base)
 int vui_winkey_translate(unsigned vk, unsigned scan, uint32_t uc, uint32_t unshifted, unsigned ctrl_state, VuiEvent *out);
 
+// For vui_set_key_release(): the event for a key going UP (down == 0), or for a modifier / lock key going down (those
+// aren't keys for vui_winkey_translate). Returns 0 for a press of anything else. key is VUI_KEY_NONE for modifiers and
+// locks, else the named key, or VUI_KEY_CHAR with `unshifted` (or the US character of the scancode); .release is set.
+int vui_winkey_state(unsigned vk, unsigned scan, int down, uint32_t unshifted, unsigned ctrl_state, VuiEvent *out);
+
 // A MOUSE_EVENT_RECORD. x, y are cells relative to the visible window. `level` is vui_set_mouse's (0 off, 1 clicks and
 // drags, 2 also plain motion). Returns 1 and fills *out when there is something to report.
 // buttons: dwButtonState (low word: 1 left, 2 right, 4 middle; high word: wheel delta), flags: dwEventFlags

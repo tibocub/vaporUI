@@ -4,8 +4,11 @@
 #include <string.h>
 #include "input.h"
 #include <stdio.h>
+#include <stdlib.h>
 static int probe_value=-1;static int probe(void){return probe_value;} // VuiModifiers held, -1 unknown
 static VuiEvent run(const char *s){VuiInputDecoder d;vui_input_reset(&d);VuiEvent e={0};for(;*s;s++){VuiEvent x=vui_input_feed(&d,(uint8_t)*s);if(x.type)e=x;}return e;}
+static const char *hook_name;
+static const char *hook_fr(void){ return hook_name ? hook_name : "fr"; }
 int main(void){
  VuiEvent e=run("\x1b" "x"); assert(e.key.key==VUI_KEY_CHAR&&e.key.character=='x'&&e.key.modifiers==VUI_MOD_ALT);
  e=run("\x1b[1;5C"); assert(e.key.key==VUI_KEY_RIGHT&&e.key.modifiers==VUI_MOD_CTRL);
@@ -78,6 +81,23 @@ int main(void){
  probe_value=0; e=run("&"); assert(e.type==VUI_EVENT_TEXT&&e.text.codepoint=='&'); // plain typing stays text
  probe_value=VUI_MOD_SHIFT; e=run("1"); assert(e.type==VUI_EVENT_TEXT); // Shift alone is just a capital / symbol
  vui_input_set_shift_probe(NULL);
+ vui_set_layout("us");
+ // OS-reported layout names (the backend's hook), used when no name is given and $VUI_LAYOUT is unset
+ unsetenv("VUI_LAYOUT");
+ vui_layout_hook=hook_fr; assert(vui_set_layout(NULL)==0);
+ { const char *names[]={"fr","fr-latin9","fr(oss)","fr+oss","us","de","fr_CH"}; int want[]={1,1,1,1,0,0,0};
+   for(int i=0;i<7;i++){ hook_name=names[i]; vui_set_layout("us"); vui_set_layout(NULL); VuiEvent k=run("\033&"); assert((k.key.base=='1')==want[i]); } }
+ vui_layout_hook=NULL;
+ // other tables: what Alt+<char> reports as its US position
+ { struct { const char *lay, *seq; int base, shift; } c[] = {
+     { "de", "\033&", '6', 1 }, { "de", "\033/", '7', 1 }, { "de", "\033z", 'y', 0 }, { "de", "\033\xc3\xb6", ';', 0 },
+     { "es", "\033&", '6', 1 }, { "es", "\033\xc3\xb1", ';', 0 }, { "it", "\033\xc3\xb2", ';', 0 }, { "it", "\033\"", '2', 1 },
+     { "gb", "\033\"", '2', 1 }, { "gb", "\033@", '\'', 1 }, { "gb", "\033&", '7', 1 } };
+   for (unsigned i = 0; i < sizeof c / sizeof c[0]; i++) {
+     assert(vui_set_layout(c[i].lay) == 0);
+     VuiEvent k = run(c[i].seq);
+     assert(k.key.base == (unsigned)c[i].base && !!(k.key.modifiers & VUI_MOD_SHIFT) == c[i].shift);
+   } }
  vui_set_layout("us");
  puts("input decoder: ok");
  return 0;}

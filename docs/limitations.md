@@ -28,6 +28,8 @@ Current limits, in one place. Update this file when one is lifted.
 - Overlays: at most 8, no tiling, no minimise/maximise, no keyboard move/resize, menus (`menubar`, `menu_popup`) have no separators, shortcuts, disabled items, checkmarks or submenus, and clicking another title while one is open just closes it. A new overlay's rect is fixed after it is added; content that grows later doesn't resize it. `list` measures its width from the first 256 rows.
 - Event loop: 16 fd watches and 16 timers, level-triggered, millisecond resolution; no write-readiness watches, and a hung-up fd keeps firing until it is unwatched. A closed terminal (EOF / hangup on the tty) is reported as `VUI_EVENT_CLOSE` on POSIX (`vui_run` quits on it; own loops should break); not on Windows.
 - Windows: a few AltGr/dead-key and Ctrl+Shift combos misreport or never arrive, see docs/input.md ("Windows: what was checked...").
+- Terminal widget on Windows (ConPTY): compiled, and spawn / exit code / cleanup run under Wine, but output, resize, typing and mouse are unverified on a real Windows console (Wine's ConPTY doesn't feed our pipe). Needs Windows 10 1809+.
+- Terminal widget: the scrollback shows stored lines at their own width (no reflow), none on the alternate screen; selection has no rectangular mode and is dropped on a resize or alt-screen switch (rows re-wrap); there is no system clipboard read (see widgets.md).
 - Mouse drag capture: the node that handled a left press gets all mouse events until release.
 - Focus/hover pointers are validated against the tree on each dispatch, but destroying a subtree
   while the app still holds raw pointers into it is on the app.

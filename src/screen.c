@@ -190,6 +190,25 @@ static void unglue(VuiScreen *scr, unsigned int x, unsigned int y)
     }
 }
 
+// Flip the reverse-video attribute of the cell (both halves of a wide character): a software pointer
+void scr_toggle_reverse(VuiScreen *scr, unsigned int x, unsigned int y)
+{
+    Cell *row;
+
+    if (x >= scr->width || y >= scr->height) return;
+    row = &scr->back[y * scr->width];
+    if (CELL_CP(row[x]) == CONT_CP && x > 0) x--;
+
+    for (unsigned int i = x; i < scr->width && i < x + 2; i++) {
+        VuiStyle st;
+
+        if (i > x && CELL_CP(row[i]) != CONT_CP) break;
+        st = scr->styles[CELL_STYLE(row[i])];
+        st.attr ^= VUI_ATTR_REVERSE;
+        row[i] = CELL(CELL_CP(row[i]), intern(scr, st));
+    }
+}
+
 void scr_set(VuiScreen *scr, unsigned int x, unsigned int y, VuiCodepoint cp, VuiStyle style)
 {
     int w = vui_cp_width(cp);
@@ -271,6 +290,30 @@ void vui_set_color_depth(int depth)
     color_depth = depth;
 }
 
+// The nearest of the 16 basic colors, by distance to the Linux console's palette (ANSI order: black, red, green, yellow,
+// blue, magenta, cyan, white, then the bright ones). A threshold on each channel sent every dim gray (comments, line
+// numbers, #6c7086) to black, so text vanished on a black background.
+static unsigned int nearest16(unsigned int r, unsigned int g, unsigned int b)
+{
+    static const unsigned char pal[16][3] = {
+        { 0, 0, 0 }, { 170, 0, 0 }, { 0, 170, 0 }, { 170, 85, 0 }, { 0, 0, 170 }, { 170, 0, 170 }, { 0, 170, 170 }, { 170, 170, 170 },
+        { 85, 85, 85 }, { 255, 85, 85 }, { 85, 255, 85 }, { 255, 255, 85 }, { 85, 85, 255 }, { 255, 85, 255 }, { 85, 255, 255 }, { 255, 255, 255 },
+    };
+    unsigned int best = 0, best_d = ~0u;
+
+    for (unsigned int i = 0; i < 16; i++) {
+        int dr = (int)r - pal[i][0], dg = (int)g - pal[i][1], db = (int)b - pal[i][2];
+        unsigned int d = (unsigned int)(dr * dr + dg * dg + db * db);
+
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+
+    return best;
+}
+
 // SGR parameter for one color; base is 30 (foreground) or 40 (background).
 // Colors beyond the terminal's depth are approximated.
 static int color_sgr(char *buf, int size, VuiColor c, int base)
@@ -314,11 +357,7 @@ static int color_sgr(char *buf, int size, VuiColor c, int base)
         return snprintf(buf, size, ";%d;5;%u", base + 8, 16 + 36 * ((r * 5 + 127) / 255) + 6 * ((g * 5 + 127) / 255) + (b * 5 + 127) / 255);
     }
 
-    {
-        unsigned int index = (r > 127) | (g > 127) << 1 | (b > 127) << 2, bright = r > 191 || g > 191 || b > 191;
-
-        return color_sgr(buf, size, index + 1 + (bright && index ? 8 : 0), base);
-    }
+    return color_sgr(buf, size, nearest16(r, g, b) + 1, base);
 }
 
 static int style_sgr(VuiStyle style, char *buf, int bufsize)

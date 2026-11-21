@@ -870,7 +870,7 @@ static void set_dec_mode(VTermState *state, int num, int val)
 
 static void request_dec_mode(VTermState *state, int num)
 {
-  int reply;
+  int reply = 0;
 
   switch(num) {
     case 1:

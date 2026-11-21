@@ -26,7 +26,10 @@ void node_destroy(VuiNode *node)
         return;
     }
 
+    node_remove(node); // no dangling pointer in a parent that outlives it (no-op for a root)
+
     for (unsigned int i = 0; i < node->child_count; i++) {
+        node->children[i]->parent = NULL; // so the child doesn't edit the array we are walking
         node_destroy(node->children[i]);
     }
 

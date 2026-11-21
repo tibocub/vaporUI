@@ -17,6 +17,10 @@ typedef enum { VUI_KEYS_LEGACY, VUI_KEYS_KITTY, VUI_KEYS_XTERM } VuiKeyMode;
 int vui_keys_reply_complete(const char *reply, size_t n); // the DA1 reply (ends in 'c') has arrived
 VuiKeyMode vui_keys_mode(const char *reply, size_t n);    // n == 0: no answer at all, legacy
 
+// Finds the reply inside bytes read so far, which may have keys typed before / after it (they must not be lost):
+// the first ESC [ ? ... c made of parameter bytes. Returns 1 and the byte range [*start, *end) when complete.
+int vui_keys_find_reply(const char *buf, size_t n, size_t *start, size_t *end);
+
 const char *vui_keys_enable(VuiKeyMode mode);
 const char *vui_keys_disable(VuiKeyMode mode);
 

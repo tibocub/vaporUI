@@ -19,6 +19,16 @@ Shift is held (Alt+Shift+q is `'q'`, ALT|SHIFT, however the terminal reports it:
 `XK_q` + `ShiftMask`. Symbols can't be normalised: a terminal sends the shifted character (`!`, or `1` on AZERTY),
 so bind what the layout types.
 
+## Key release and repeat
+
+Terminals don't report a key going up, but two backends see it: the Linux console (raw keycodes) and the Windows
+console. `vui_set_key_release(1)` opts in: you then get `VUI_EVENT_KEY` with `key.release == 1` for every key that
+goes up, and `key == VUI_KEY_NONE` events (with the `scancode`, `VUI_SC_LALT` and so on) when a modifier goes down or
+up, so "Alt still held" is `modifiers & VUI_MOD_ALT` on the latest event (modifiers are what is held *after* the event).
+`key.repeat` is 1 for the auto-repeat of a held key (those two backends only, always on). `vui_dispatch()` ignores both
+kinds of event, so widgets never see them: read them in your loop or the `vui_run` handler. Everywhere else (terminals
+in a window, ssh) the option does nothing.
+
 ## What a terminal can actually send
 
 A terminal only reports what it encodes. Three tiers, all handled in `src/vt.c` / `src/input.c`:
@@ -55,7 +65,7 @@ Where `base` comes from:
 1. **The terminal**, with the kitty keyboard protocol's alternate keys (vaporUI asks for them at init): kitty, foot,
    WezTerm, Ghostty, Alacritty. Exact, nothing to configure.
 2. **A layout table**, for every other terminal (GNOME Terminal, xterm, the Linux console...), which cannot tell:
-   `vui_set_layout("fr")` or `VUI_LAYOUT=fr` in the environment (`us`, the default, and `fr` for now; a table is a
+   `vui_set_layout("fr")` or `VUI_LAYOUT=fr` in the environment (`us`, the default, `fr`, `de`, `es`, `it`, `gb`; dead keys and AltGr characters have no entries; a table is a
    few lines in `src/input.c`, contributions welcome). A terminal that does send alternate keys never needs it.
 3. **Windows:** exact, from the console itself. The backend reads `KEY_EVENT` records (virtual key, scan code, control
    state) and `MOUSE_EVENT` records natively, with no VT input mode and no escape sequences, so it does not depend on
@@ -99,14 +109,38 @@ Known quirks, not fixed:
 
 ### The Linux console (TTY)
 
-The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information. On a French keymap Alt+é and
-Alt+Shift+é are both `ESC 2`, Ctrl+& is a plain `&`, and Ctrl+é is `0x1e` (Ctrl+^), the same as a real Ctrl+^.
-vaporUI recovers what it can: when stdin is a real VT, each ESC-prefixed character, Ctrl+letter byte and typed
-character is followed by a `TIOCL_GETSHIFTSTATE` ioctl that says which of Shift/Ctrl/Alt are down right now
-(`vui_input_set_shift_probe`, installed by the POSIX backend). That restores Alt+é (`'é'` + ALT, base `'2'`, as
-opposed to Alt+Shift+é = `'2'` + ALT|SHIFT), Ctrl+& (`'&'` + CTRL, base `'1'`) and Ctrl+Shift+letter. Not recoverable:
-Ctrl+é and similar, where the kernel sends another key's control byte. Over ssh or in a terminal emulator there is no
-VT to ask. Alt+F1..F6 switch virtual terminals in the kernel and never reach the app.
+The console speaks neither kitty nor modifyOtherKeys, and its keymap loses information (on a French keymap Alt+é and
+Alt+Shift+é are both `ESC 2`, Ctrl+& is a plain `&`, Ctrl+é is `0x1e`, the same as Ctrl+^). So on a real VT (stdin
+answers `KDGKBTYPE`) vaporUI does what games and `showkey` do: it puts the keyboard in **K_MEDIUMRAW**, where the kernel
+reports which physical key went down or up, and translates itself (`src/vtraw.c`, pure and tested; the keymap is read
+with `KDGKBENT`, the accent table with `KDGKBDIACRUC`). The result is exact: every Ctrl/Alt/Shift combination on every
+key, with `scancode` and `base` like on Windows, dead keys and AltGr as typed, NumLock/CapsLock tracked by the app.
+
+Consequences and safety:
+- The keyboard mode belongs to the console and outlives the process, so it is restored at exit and on fatal signals,
+  and a tiny guard process restores it if the app is killed outright (SIGKILL, crash). If a keyboard is ever left
+  dead anyway: Alt+SysRq+R, or log in over ssh and `kbd_mode -u`.
+- The kernel's console switching is off in raw mode, so Ctrl+Alt+F1..F12 are handled by the backend
+  (`VT_ACTIVATE`); Alt+Fn is left to the app. Ctrl+Alt+Del does not reboot while the app runs.
+- CapsLock/NumLock LEDs follow the app's state (KDSETLED, handed back to the kernel at exit); the Compose key makes the next character a dead key, like the kernel's (sequences are the accent table's, not X's Compose files). Not done: KT_DEAD2 accents; Shift+NumLock-style keypad inversions.
+- `VUI_RAW_KEYS=0` goes back to the old way (bytes through the kernel keymap plus a `TIOCL_GETSHIFTSTATE` probe that
+  recovers Alt+é, Ctrl+& and Ctrl+Shift+letter, but not Ctrl+é). It is also used when raw mode cannot be set up (no
+  permission, no keymap we understand). Over ssh or in a terminal emulator there is no VT: the terminal tiers apply.
+
+#### Mouse on the console (gpm)
+
+The console has no mouse protocol; the `gpm` daemon owns the mouse and draws its own pointer and text selection. While an
+app has the mouse on (`vui_set_mouse`), the POSIX backend connects to `/dev/gpmctl` (`src/gpm.c`, pure structs; no
+libgpm needed), takes the events. The daemon then draws no pointer (a client could only draw one as root), so vaporUI draws its own: the cell under the mouse is shown in reverse video (`vui_soft_pointer`, `scr_toggle_reverse`). Plain mouse motion therefore reaches the app even at mouse level 1. Closing the socket (mouse off,
+exit) gives the mouse back to gpm, so plain text selection works again outside the app. Without the daemon running
+(`systemctl start gpm`) there is no mouse on a console. **Scrolling.** gpm only passes on what the kernel's `/dev/input/mice` gives it. A real wheel works (the unit runs
+`gpm -t exps2`, which asks for wheel data). A TrackPoint's middle-button scrolling and a touchpad's two-finger scrolling are
+done by userspace (libinput) on a desktop and do not exist here: the touchpad is reduced to a plain mouse. vaporUI therefore
+emulates a wheel from the middle button, like libinput does for the TrackPoint: hold the middle button and push the stick
+up or down, one wheel step per `VUI_GPM_SCROLL` units of movement (default 10; 0 turns it off). A middle click that did not scroll
+is still a click. Two-finger scrolling on the touchpad would need reading `/dev/input/event*` directly, which is not done.
+Shortcuts: the wheel's sign convention was read from gpm's
+headers, not tested on hardware.
 
 ### Terminal shortcuts
 

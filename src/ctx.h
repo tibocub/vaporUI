@@ -32,6 +32,8 @@ struct VuiCtx {
     VuiScreen *screen;
     VuiNode *focus;
     VuiNode *capture; // gets mouse events until the button is released
+    int ptr_on;           // a software mouse pointer is shown (the console has none of its own): where
+    unsigned int ptr_x, ptr_y;
     VuiNode *hover; // deepest node under the pointer; it and its ancestors have ->hovered set
 };
 
@@ -43,5 +45,8 @@ int vui_platform_input_pending(void); // implemented by each backend
 uint64_t vui_platform_now_ms(void);
 
 extern void (*vui_clipboard_hook)(const char *utf8);
+// Set by a backend that gets the mouse from a source with no pointer of its own (the Linux console via gpm): the
+// frame then draws one (a reversed cell) where the last mouse event was.
+extern int vui_soft_pointer;
 
 #endif

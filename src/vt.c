@@ -91,9 +91,9 @@ VuiVtResult vui_vt_feed(VuiVtDecoder *decoder, uint8_t byte, VuiEvent *event)
     if (byte >= '0' && byte <= '9') {
         // shortcut: only the first three params are kept, rest are dropped
         if (!decoder->sub && decoder->index < 3) {
-            decoder->param[decoder->index] = decoder->param[decoder->index] * 10 + (byte - '0');
+            if (decoder->param[decoder->index] < 100000000) decoder->param[decoder->index] = decoder->param[decoder->index] * 10 + (byte - '0'); // clamp: a hostile CSI must not overflow int
         } else if (decoder->index == 0 && decoder->sub <= 2) {
-            decoder->alt[decoder->sub - 1] = decoder->alt[decoder->sub - 1] * 10 + (byte - '0');
+            if (decoder->alt[decoder->sub - 1] < 100000000) decoder->alt[decoder->sub - 1] = decoder->alt[decoder->sub - 1] * 10 + (byte - '0');
         }
         return VUI_VT_NEED_MORE;
     }

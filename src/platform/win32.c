@@ -10,6 +10,8 @@
 
 #include "../../include/vaporui.h"
 #include "../winkeys.h"
+#include "../scancode.h"
+#include "../input.h"
 #include "../ctx.h"
 #define VTOUT_NO_PASTE
 #define VUI_OUT_BUFFER 16384 // one console write per few frames beats a write per cell
@@ -29,6 +31,15 @@ static HANDLE con_in = INVALID_HANDLE_VALUE, con_out = INVALID_HANDLE_VALUE;
 static DWORD saved_in_mode, saved_out_mode;
 static UINT saved_cp;
 static int saved_stdout_fd = -1; // the program's real stdout while the UI draws on the console
+// The active keyboard layout of the foreground window (0x040C is French France; other French layouts differ)
+static const char *detect_layout(void)
+{
+    DWORD thread = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+    unsigned int lang = (unsigned int)(UINT_PTR)GetKeyboardLayout(thread) & 0xFFFFu;
+
+    return lang == 0x040C ? "fr" : lang == 0x0409 ? "us" : NULL;
+}
+
 static int mouse_level;
 static unsigned int prev_buttons;
 static WCHAR high_surrogate;
@@ -76,6 +87,7 @@ int vui_platform_init(void)
         return -1;
     }
 
+    vui_layout_hook = detect_layout;
     mouse_level = 0;
     prev_buttons = 0;
     high_surrogate = 0;
@@ -162,13 +174,25 @@ static uint32_t unshifted_char(unsigned vk, unsigned scan)
     return n == 1 ? buf[0] : 0;
 }
 
+static unsigned char vk_down[256]; // keys seen going down, to tell auto-repeat from a fresh press
+
 static VuiEvent key_record(const KEY_EVENT_RECORD *k)
 {
     VuiEvent event = { .type = VUI_EVENT_NONE };
     uint32_t uc = k->uChar.UnicodeChar;
+    unsigned vk = k->wVirtualKeyCode;
+    int repeat = vk < 256 && vk_down[vk];
+
+    if (vk < 256) vk_down[vk] = k->bKeyDown != 0;
 
     if (!k->bKeyDown) {
-        return event; // releases are not reported; shortcut: a held key repeats as separate records, the repeat count is ignored
+        // releases only for apps that asked (vui_set_key_release); a held key repeats as separate records
+        if (!vui_key_release_reports || !vui_winkey_state(vk, k->wVirtualScanCode, 0, unshifted_char(vk, k->wVirtualScanCode),
+                                                          k->dwControlKeyState, &event)) {
+            event.type = VUI_EVENT_NONE;
+        }
+
+        return event;
     }
 
     if (uc >= 0xD800 && uc < 0xDC00) { // half of a surrogate pair: wait for the other
@@ -185,8 +209,11 @@ static VuiEvent key_record(const KEY_EVENT_RECORD *k)
     if (!vui_winkey_translate(k->wVirtualKeyCode, k->wVirtualScanCode, uc, unshifted_char(k->wVirtualKeyCode, k->wVirtualScanCode),
                               k->dwControlKeyState, &event)) {
         event.type = VUI_EVENT_NONE;
+        if (vui_key_release_reports && vui_winkey_state(vk, k->wVirtualScanCode, 1, 0, k->dwControlKeyState, &event)) event.key.repeat = repeat;
+        return event;
     }
 
+    event.key.repeat = repeat;
     return event;
 }
 
