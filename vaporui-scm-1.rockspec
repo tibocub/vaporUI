@@ -9,7 +9,7 @@ description = {
   license = "MIT",
 }
 dependencies = { "lua >= 5.1" }
--- build from the repository root: luarocks make bindings/lua/vaporui-scm-1.rockspec
+-- luarocks make, from this folder
 build = {
   type = "builtin",
   modules = {

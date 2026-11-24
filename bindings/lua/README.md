@@ -18,5 +18,5 @@ ui.close()
 `poll` blocks the whole process while it waits, like any call in a single-threaded Lua program. Coordinates are 1-based.
 The module header in `src/lvaporui.c` is the reference.
 
-Install from the repository root: `luarocks make bindings/lua/vaporui-scm-1.rockspec`.
+Install from the repository root: `luarocks make vaporui-scm-1.rockspec`.
 Tests (need a Unix pty and the rock installed): `LUA=lua sh bindings/lua/tests/run.sh`; `examples/snake` is a small game.
