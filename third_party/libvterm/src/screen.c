@@ -673,8 +673,10 @@ static void resize_buffer(VTermScreen *screen, int bufidx, int new_rows, int new
 
   /* We really expect the cursor position to be set by now */
   if(active && (new_cursor.row == -1 || new_cursor.col == -1)) {
-    fprintf(stderr, "screen_resize failed to update cursor position\n");
-    abort();
+    /* reflow lost the cursor (seen when a full-screen animation redraws during rapid resizes): keep it in range
+     * instead of aborting the whole program */
+    new_cursor.row = 0;
+    new_cursor.col = old_cursor.col < new_cols ? old_cursor.col : new_cols-1;
   }
 
   if(old_row >= 0 && bufidx == BUFIDX_PRIMARY) {
@@ -752,8 +754,13 @@ static void resize_buffer(VTermScreen *screen, int bufidx, int new_rows, int new
   vterm_allocator_free(screen->vt, old_lineinfo);
   statefields->lineinfos[bufidx] = new_lineinfo;
 
-  if(active)
+  if(active) {
+    if(new_cursor.row < 0) new_cursor.row = 0;
+    if(new_cursor.row >= new_rows) new_cursor.row = new_rows-1;
+    if(new_cursor.col < 0) new_cursor.col = 0;
+    if(new_cursor.col >= new_cols) new_cursor.col = new_cols-1;
     statefields->pos = new_cursor;
+  }
 
   return;
 }
