@@ -64,6 +64,13 @@ until the pseudo console is closed, so the exit is noticed by a 100 ms timer; `o
 `tests/win_term.c`, a smoke test). Wine's ConPTY writes the program's screen to Wine's own stdout instead of our pipe, so under Wine only the
 exit path is checked: the drawing, resize and typing paths need a real Windows console.
 
+The ConPTY that ships with Windows 10 drops the mouse modes (`?1000/?1002/?1003/?1006`) and `?1049` from the program's output, and doesn't
+deliver mouse input to programs like nvim, so the widget keeps selecting text itself. If `conpty.dll` and `OpenConsole.exe` (Windows Terminal's
+own ConPTY, MIT; WezTerm ships the same pair) are in `%VUI_CONPTY_DIR%` or next to the executable, they are used instead: the mode sequences
+come through, libvterm sees them, and mouse forwarding works like on a POSIX pty (checked with nvim: SGR and X10 clicks, drag). Don't pass
+`PSEUDOCONSOLE_PASSTHROUGH_MODE`: the modes are visible but clicks no longer reach the program. Without the pair the system ConPTY is used
+and mouse programs can't be detected.
+
 On NuttX (no MMU, so no `fork`) it opens `/dev/ptmx` and `posix_spawn`s the program: needs `CONFIG_PSEUDOTERM`,
 enabled by vaporOS's `vaporui-terminal` feature (sim-nsh). libvterm keeps ~40 B per cell (twice with the alternate
 screen), so it is not meant for the RP2040. Not for wasm / Windows.

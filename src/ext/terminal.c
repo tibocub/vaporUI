@@ -14,6 +14,7 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#include <wchar.h>
 #include <windows.h>
 #else
 #include <sys/ioctl.h>
@@ -255,15 +256,59 @@ static VuiColor color(VTermScreen *screen, VTermColor c)
 static long (WINAPI *conpty_create)(COORD, HANDLE, HANDLE, DWORD, void **);
 static long (WINAPI *conpty_resize)(void *, COORD);
 static void (WINAPI *conpty_close)(void *);
+static int conpty_bundled; // a conpty.dll + OpenConsole.exe pair was loaded instead of the system's
+
+// The ConPTY that ships with Windows 10 (conhost) swallows the mouse modes (?1000/?1002/?1003/?1006) and ?1049 instead of
+// passing them on, so the widget can't know a program wants the mouse (and conhost doesn't turn mouse input into
+// something the program reads either). Windows Terminal's own ConPTY (conpty.dll + OpenConsole.exe, MIT; WezTerm ships
+// the same pair) forwards them and handles mouse input. Used when found in $VUI_CONPTY_DIR or next to the executable,
+// with default flags: PSEUDOCONSOLE_PASSTHROUGH_MODE makes the program's mouse input stop working. The system's is the fallback.
+static HMODULE conpty_open_bundled(void)
+{
+    WCHAR path[MAX_PATH + 16];
+    DWORD n = GetEnvironmentVariableW(L"VUI_CONPTY_DIR", path, MAX_PATH);
+    HMODULE h = NULL;
+
+    for (int pass = 0; pass < 2 && h == NULL; pass++) {
+        WCHAR *end;
+
+        if (pass == 0 && (n == 0 || n >= MAX_PATH)) continue;
+        if (pass == 1) {
+            n = GetModuleFileNameW(NULL, path, MAX_PATH);
+            if (n == 0 || n >= MAX_PATH) break;
+            end = wcsrchr(path, L'\\');
+            if (end == NULL) break;
+            *end = 0;
+        }
+
+        end = path + wcslen(path);
+        wcscpy(end, L"\\OpenConsole.exe");
+        if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) continue; // the dll starts it from its own folder
+        wcscpy(end, L"\\conpty.dll");
+        h = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+    }
+
+    return h;
+}
 
 static int conpty_load(void)
 {
-    HMODULE k = GetModuleHandleW(L"kernel32.dll");
+    if (conpty_create == NULL) {
+        HMODULE k = conpty_open_bundled();
 
-    if (conpty_create == NULL && k != NULL) {
-        *(FARPROC *)&conpty_create = GetProcAddress(k, "CreatePseudoConsole");
-        *(FARPROC *)&conpty_resize = GetProcAddress(k, "ResizePseudoConsole");
-        *(FARPROC *)&conpty_close = GetProcAddress(k, "ClosePseudoConsole");
+        if (k != NULL) {
+            *(FARPROC *)&conpty_create = GetProcAddress(k, "CreatePseudoConsole");
+            *(FARPROC *)&conpty_resize = GetProcAddress(k, "ResizePseudoConsole");
+            *(FARPROC *)&conpty_close = GetProcAddress(k, "ClosePseudoConsole");
+            conpty_bundled = conpty_create != NULL && conpty_resize != NULL && conpty_close != NULL;
+        }
+
+        if (!conpty_bundled) {
+            k = GetModuleHandleW(L"kernel32.dll");
+            conpty_create = k ? (void *)GetProcAddress(k, "CreatePseudoConsole") : NULL;
+            conpty_resize = k ? (void *)GetProcAddress(k, "ResizePseudoConsole") : NULL;
+            conpty_close = k ? (void *)GetProcAddress(k, "ClosePseudoConsole") : NULL;
+        }
     }
 
     return conpty_create != NULL && conpty_resize != NULL && conpty_close != NULL;
