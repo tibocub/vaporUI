@@ -114,7 +114,7 @@ static VuiEvent feed(VuiInputDecoder *decoder, uint8_t byte)
                 decoder->shift_state = m < 0 ? -1 : (m & VUI_MOD_SHIFT) ? 1 : 0;
             }
         } else {
-            VuiEvent parsed;
+            VuiEvent parsed = { .type = VUI_EVENT_NONE }; // zeroed: the decoder only sets some key fields (release, repeat, scancode)
 
             switch (vui_vt_feed(&decoder->vt, byte, &parsed)) {
             case VUI_VT_NEED_MORE:

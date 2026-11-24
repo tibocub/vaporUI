@@ -417,14 +417,11 @@ static void term_draw(VuiNode *node, VuiScreen *scr, void *userdata)
             int selected = sel && (int)x >= c0 && (int)x < c1;
 
             if (!cell_at(t, idx, x, &c) || c.chars[0] == 0 || c.chars[0] == (uint32_t)-1) c.chars[0] = 0; // blank, or the right half of a wide char
-            if (c.chars[0] == 0 && !selected) continue;
-
-            if (c.chars[0] != 0 || selected) {
-                s.fg = color(t->screen, c.fg);
-                s.bg = color(t->screen, c.bg);
-                s.attr = (c.attrs.bold ? VUI_ATTR_BOLD : 0) | (c.attrs.underline ? VUI_ATTR_UNDERLINE : 0) | (c.attrs.reverse ? VUI_ATTR_REVERSE : 0);
-                if (selected) s.attr ^= VUI_ATTR_REVERSE;
-            }
+            s.fg = color(t->screen, c.fg);
+            s.bg = color(t->screen, c.bg);
+            s.attr = (c.attrs.bold ? VUI_ATTR_BOLD : 0) | (c.attrs.underline ? VUI_ATTR_UNDERLINE : 0) | (c.attrs.reverse ? VUI_ATTR_REVERSE : 0);
+            if (selected) s.attr ^= VUI_ATTR_REVERSE;
+            if (c.chars[0] == 0 && !selected && s.bg == VUI_COLOR_DEFAULT && !(s.attr & VUI_ATTR_REVERSE)) continue; // empty with the default look: already filled
 
             // shortcut: only the base character is drawn, combining marks are dropped
             scr_set(scr, r.x + x, r.y + y, c.chars[0] ? c.chars[0] : ' ', s);
@@ -884,6 +881,7 @@ VuiTerminal *terminal_create(const char *const argv[])
     t->pid = forkpty(&t->fd, NULL, NULL, &ws);
 
     if (t->pid == 0) {
+        setenv("TERM", "xterm-256color", 1); // what libvterm emulates, not the outer terminal's (linux has no mouse, xterm-kitty wants kitty's protocols)
         execvp(argv[0], (char *const *)argv);
         _exit(127);
     }
